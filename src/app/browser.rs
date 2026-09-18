@@ -1631,7 +1631,14 @@ impl Browser {
     }
 
     pub(crate) fn can_undo(&self) -> bool {
-        self.current_operation.get().is_none() && peek_pending_undo().is_some()
+        self.current_operation.get().is_none()
+            && PENDING_UNDO.with(|pending| {
+                pending
+                    .borrow()
+                    .history
+                    .last()
+                    .is_some_and(|latest| !latest.claimed)
+            })
     }
 
     /// The pending move undo, if the latest reversible operation was a move.
