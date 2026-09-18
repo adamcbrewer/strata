@@ -108,6 +108,21 @@ opens the highlighted folder, and **Left/h** returns to the parent. Left at the
 archive root and Right/Enter on a member file do nothing. Navigating never
 extracts anything or touches the filesystem; **Space** and **Escape** still
 close the preview.
+## Command palette
+
+Press **Ctrl+Shift+P** or use the header's **Command palette** button to find
+commands by name or alias (for example, `mkdir` or `preferences`). Use **Up/Down**
+to choose a command, wrapping between the first and last results, **Enter** to run
+it, and **Escape** to close the palette and restore focus. Unavailable commands
+explain what is needed before they can run.
+The palette preserves the originating pane and selection, and closes before
+opening another dialog or starting an inline rename. Finish an active inline
+edit before opening it.
+
+With an empty query, the last five invoked commands appear under **Recents**,
+followed by the remaining commands grouped by purpose. Recents are shared across
+windows for the current application session. Typing ranks commands by relevance,
+independently of recency.
 
 ## Shortcut footer
 
