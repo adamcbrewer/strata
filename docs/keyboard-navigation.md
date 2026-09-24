@@ -108,6 +108,7 @@ opens the highlighted folder, and **Left/h** returns to the parent. Left at the
 archive root and Right/Enter on a member file do nothing. Navigating never
 extracts anything or touches the filesystem; **Space** and **Escape** still
 close the preview.
+
 ## Command palette
 
 Press **Ctrl+Shift+P** or use the header's **Command palette** button to find
