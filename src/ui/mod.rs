@@ -37,7 +37,7 @@ mod settings;
 mod shortcut_footer;
 mod table_view;
 mod terminal;
-pub(crate) mod theme;
+mod theme;
 mod thumbnail;
 pub(crate) mod thumbnail_cache;
 mod top_bar_navigation;

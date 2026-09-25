@@ -32,15 +32,14 @@ def test_model_preview_renders_stl_prefers_thumbnails_and_reports_limits(strata)
     with zipfile.ZipFile(folder / "sample.3mf", "w") as package:
         package.writestr(
             "3D/3dmodel.model",
-            '<model><resources><object id="1"><mesh><vertices>'
-            '<vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/>'
-            '<vertex x="0" y="1" z="0"/></vertices><triangles>'
-            '<triangle v1="0" v2="1" v3="2"/>'
-            '</triangles></mesh></object></resources><build><item objectid="1"/></build></model>',
+            'geometry must not be parsed when one usable thumbnail exists',
         )
         thumbnail = io.BytesIO()
         Image.new("RGB", (32, 32), "red").save(thumbnail, format="PNG")
         package.writestr("Metadata/thumbnail.png", thumbnail.getvalue())
+        package.writestr("Metadata/invalid-thumbnail.png", b"invalid image")
+    (folder / "sample.3mf").rename(folder / "model-blob")
+    (folder / "sample.3mf").symlink_to("model-blob")
 
     strata.wait(lambda: strata.entry("sample.stl"), "STL file in listing")
     strata.select_entry("sample.stl")
@@ -71,7 +70,7 @@ def test_model_preview_renders_stl_prefers_thumbnails_and_reports_limits(strata)
     strata.wait(lambda: strata.entry("missing.FCStd"), "FreeCAD file in listing")
     strata.select_entry("missing.FCStd")
     strata.keyboard.press("space")
-    strata.wait(lambda: strata.preview_shows("This FreeCAD file has no embedded thumbnail"), "specific sandbox error")
+    strata.wait(lambda: strata.preview_shows("This FreeCAD file has no usable embedded thumbnail"), "specific sandbox error")
     strata.pointer.click(strata.preview().find(role="button", name="Close preview (Space)"))
     strata.wait(lambda: strata.preview() is None, "FreeCAD preview to close")
     with (folder / "oversized.stl").open("wb") as file:

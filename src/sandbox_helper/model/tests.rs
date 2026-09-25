@@ -3,13 +3,18 @@
 use super::*;
 use std::io::Write;
 
+fn render(input: &Path, value: &str) -> Result<Vec<u8>, String> {
+    let format = ModelFormat::for_name(input.as_os_str()).expect("model format");
+    render_reporting(input, &format!("{}:{value}", format.argument()), &|_| {})
+}
+
 #[test]
 fn model_progress_tracks_parsing_rendering_and_encoding_and_stops_on_failure() {
     let directory = tempfile::tempdir().expect("fixture directory");
     let path = directory.path().join("progress.stl");
     fs::write(&path, "solid sample\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid").expect("STL");
     let stages = std::cell::RefCell::new(Vec::new());
-    let png = render_reporting(&path, "200x200:00ff00:101010", &|stage| {
+    let png = render_reporting(&path, "stl:200x200:00ff00:101010", &|stage| {
         stages.borrow_mut().push(stage)
     })
     .expect("model render");
@@ -25,7 +30,7 @@ fn model_progress_tracks_parsing_rendering_and_encoding_and_stops_on_failure() {
     stages.borrow_mut().clear();
     fs::write(&path, b"not an STL").expect("invalid model");
     assert!(
-        render_reporting(&path, "200x200:00ff00:101010", &|stage| stages
+        render_reporting(&path, "stl:200x200:00ff00:101010", &|stage| stages
             .borrow_mut()
             .push(stage))
         .is_err()
@@ -90,7 +95,7 @@ fn freecad_thumbnail_needs_no_geometry_reader_and_missing_thumbnail_is_unavailab
             assert!(
                 result
                     .expect_err("missing thumbnail")
-                    .contains("no embedded thumbnail")
+                    .contains("no usable embedded thumbnail")
             );
         }
     }
@@ -291,4 +296,52 @@ fn single_thumbnail_is_preferred_and_multiple_or_invalid_thumbnails_render_the_m
     assert_ne!(embedded, shaded);
     let recolored = render(&path, "200x200:0000ff:101010").expect("recolored model");
     assert_ne!(shaded, recolored);
+}
+
+#[test]
+fn component_reference_and_expansion_budgets_reject_fanout() {
+    let component = "<component objectid=\"1\"/>";
+    let xml = format!(
+        "<model><resources><object id=\"1\"><components>{}</components></object></resources><build><item objectid=\"1\"/></build></model>",
+        component.repeat(MAX_MODEL_COMPONENT_REFERENCES + 1)
+    );
+    assert_eq!(
+        triangles_3mf(xml.as_bytes()).expect_err("bounded failure"),
+        "3MF component reference limit exceeded"
+    );
+
+    let xml = format!(
+        "<model><resources><object id=\"1\"><components>{}</components></object></resources><build><item objectid=\"1\"/></build></model>",
+        component.repeat(MAX_MODEL_COMPONENT_REFERENCES / 2)
+    );
+    assert_eq!(
+        triangles_3mf(xml.as_bytes()).expect_err("bounded failure"),
+        "3MF component expansion limit exceeded"
+    );
+}
+
+#[test]
+fn missing_geometry_references_are_rejected() {
+    for xml in [
+        "<model><build><item objectid=\"1\"/></build></model>",
+        "<model><resources><object id=\"1\"><mesh><triangles><triangle v1=\"0\" v2=\"1\" v3=\"2\"/></triangles></mesh></object></resources><build><item objectid=\"1\"/></build></model>",
+    ] {
+        assert!(
+            triangles_3mf(xml.as_bytes())
+                .expect_err("bounded failure")
+                .contains("missing")
+        );
+    }
+}
+
+#[test]
+fn overlapping_faces_exhaust_the_raster_budget_without_finishing() {
+    let faces = vec![[[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]]; 1000];
+    let stages = std::cell::RefCell::new(Vec::new());
+    let error = shade(&faces, 800, 800, [255; 3], [0; 3], &|stage| {
+        stages.borrow_mut().push(stage)
+    })
+    .expect_err("bounded failure");
+    assert!(error.contains("rendering limit"));
+    assert!(!stages.borrow().contains(&ModelPreviewStage::Finishing));
 }

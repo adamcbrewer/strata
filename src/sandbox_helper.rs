@@ -104,6 +104,16 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             appimage::render(input, numeric_value()?.clamp(16, 256))?,
             None,
         ),
+        "thumbnail-model" => (
+            model::thumbnail(
+                input,
+                crate::services::ModelFormat::from_argument(value).ok_or("Invalid model format")?,
+                256,
+                256,
+                &|_| {},
+            )?,
+            None,
+        ),
         "preview-image" | "document-image" => (document_media::image(input, 800)?, None),
         "document-mermaid" => (document_media::mermaid(input)?, None),
         "document-math" => (document_media::math(input, true)?, None),
@@ -306,6 +316,14 @@ pub(crate) fn browser_render(
         Operation::Raw => response.png = render_raw_thumbnail(input, 256).unwrap_or_default(),
         Operation::Pdf => response.png = render_pdf_thumbnail(input, 256).unwrap_or_default(),
         Operation::Video => response.png = render_media(input, 256).unwrap_or_default(),
+        Operation::ThreeMfThumbnail | Operation::FreeCadThumbnail => {
+            let format = if operation == Operation::ThreeMfThumbnail {
+                crate::services::ModelFormat::ThreeMf
+            } else {
+                crate::services::ModelFormat::FreeCad
+            };
+            response.png = model::thumbnail(input, format, 256, 256, &|_| {}).unwrap_or_default();
+        }
         Operation::ImageMetadata => {
             response.metadata = svg_source(input)
                 .and_then(|source| document_media::svg_dimensions(&source))

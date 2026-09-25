@@ -34,6 +34,50 @@ FHS, `/run/wrappers/bin`, `/nix/store`, or `/gnu/store`.
   and user equations are passed as data, not evaluated as JavaScript;
   SVG resource resolution is disabled and only validated PNG output returns.
 
+## Local 3D model previews
+
+Quick Preview accepts STL, 3MF and FreeCAD (`.FCStd`) files. STL and single-part
+3MF geometry use a fixed-angle software render; FreeCAD uses its saved image.
+A 3MF package with exactly one usable embedded PNG uses that image, even if other
+candidates are corrupt or its geometry spans multiple model parts. Two usable
+images are ambiguous: Quick Preview tries geometry, while browser thumbnailing
+leaves the normal file icon. Multipart geometry is not rendered.
+
+Browser thumbnails extract embedded images only, through the **existing browser
+worker pool** and its normal cache, cancellation and slow-job admission. There is
+no geometry fallback, new pool or thumbnail job for STL. The decoder does not read
+model XML when selecting an embedded image. Missing or unusable images leave the
+file icon, with the existing failure cache preventing immediate retries.
+
+Heavy Quick Previews (models, PDFs, workbooks and DOCX) share one process-wide
+permit and use one-shot sandboxes. Cancellation retains that permit until the
+helper exits. Format is carried explicitly across the sandbox boundary, including
+for symlinks; the UI supplies the render palette. Geometry PNG cache keys include
+format, size and palette, and open model previews reload on palette changes.
+
+Limits are centralized in `src/services/model_preview.rs`:
+
+- Input file: **128 MiB** (134,217,728 bytes).
+- Unpacked 3MF model XML: separately **128 MiB**.
+- Geometry: **2 million triangles**, **2 million vertices**.
+- Components: **100,000 stored references** and **100,000 expanded objects**;
+  admission checks precede expansion-stack allocation.
+- Raster work: **100 million triangle bounding-box pixel visits**, with an
+  output of at most **800×800** pixels.
+
+**These input-size limits are not RAM limits.** Input, parsed geometry and codec
+allocations consume additional memory. Rendering releases source bytes first and
+projects triangles in two passes rather than retaining a second mesh. Existing
+sandbox CPU/wall-time and 2-GiB address-space limits remain a last-resort boundary;
+address space is not a resident-memory guarantee or the total application budget.
+
+Embedded-image limits live in `src/sandbox_helper/model/embedded.rs`: at most 16
+candidates, 4 MiB per candidate, 16 MiB total candidate bytes read and 16 megapixels
+(16×1024×1024 pixels) total admitted to decoding. Oversized/invalid images are not
+usable; exhausting a total inspection budget fails the operation rather than
+assuming uninspected candidates are invalid. Only bounded PNG results return to
+GTK. Thumbnail output remains at most 256×256, in the image's original colors.
+
 ## Browser worker pool
 
 Columns, List, and Icons share one lazy process-wide pool, retained across
@@ -116,7 +160,7 @@ runs from idle after the frame, outside GTK binding/layout callbacks. Identical
 in-flight file requests are reused, and presentation refreshes do not resubmit
 them. This removes fixed scheduling waits, not the time needed for I/O or decoding.
 With more than one render slot, slow
-RAW/PDF/video work leaves capacity for ordinary images. Browser metadata admission
+RAW/PDF/video and embedded-model work leaves capacity for ordinary images. Browser metadata admission
 uses the same viewport policy; cheap filesystem metadata is published before
 media inspection or directory counting. Each completed detail is published
 without waiting for other probes. Viewport fills keep one active batch per folder,
@@ -136,7 +180,7 @@ not a wall-clock guarantee: long probes, source I/O, and the existing fill budge
 can still delay details; a one-worker configuration must serialize decoding and
 probing.
 
-Quick previews and document media (images, Mermaid diagrams, equations) reuse
+Still-image quick previews and document media (images, Mermaid diagrams, equations) reuse
 the same supervisor implementation through a **second pool**, so an interactive
 Space preview never queues behind a scrolled directory's thumbnail flood. Both
 pools share the launcher thread, idle retirement, per-job isolation, and cache

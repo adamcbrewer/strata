@@ -2,19 +2,22 @@
 
 use std::{collections::HashMap, fs, io::Read, path::Path};
 
-use crate::services::ModelPreviewStage;
-use gdk_pixbuf::prelude::*;
+use crate::services::{ModelFormat, ModelPreviewStage, model_preview::*};
+
+mod embedded;
+pub(super) use embedded::thumbnail;
 use quick_xml::{
     Reader,
     events::{BytesStart, Event},
 };
 use resvg::tiny_skia::{Color, Pixmap};
 
-const MAX_TRIANGLES: usize = 2_000_000;
-const TRIANGLE_LIMIT_MESSAGE: &str =
-    "This model exceeds the 2 million triangle preview limit. Try a lower-detail version.";
-const MAX_VERTICES: usize = 2_000_000;
-const MAX_MODEL_XML: u64 = 128 * 1024 * 1024;
+fn triangle_limit_message() -> String {
+    format!(
+        "This model exceeds the {} million triangle preview limit. Try a lower-detail version.",
+        MAX_MODEL_TRIANGLES as f64 / 1_000_000.
+    )
+}
 const MULTIPART_MODEL_MESSAGE: &str = "Multipart model detected. Unable to render preview.";
 
 type Point = [f32; 3];
@@ -101,6 +104,7 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
     let mut items = Vec::new();
     let mut vertices = 0;
     let mut triangles = 0;
+    let mut components = 0;
     loop {
         let event = reader.read_event().map_err(|_| "Invalid 3MF model XML")?;
         match event {
@@ -114,8 +118,11 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
                 }
                 b"vertex" if current.is_some() => {
                     vertices += 1;
-                    if vertices > MAX_VERTICES {
-                        return Err("This 3MF model exceeds the 2 million vertex preview limit. Try a lower-detail version.".into());
+                    if vertices > MAX_MODEL_VERTICES {
+                        return Err(format!(
+                            "This 3MF model exceeds the {} million vertex preview limit. Try a lower-detail version.",
+                            MAX_MODEL_VERTICES as f64 / 1_000_000.
+                        ));
                     }
                     let point = [
                         number(&tag, b"x")?,
@@ -130,8 +137,8 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
                 }
                 b"triangle" if current.is_some() => {
                     triangles += 1;
-                    if triangles > MAX_TRIANGLES {
-                        return Err(TRIANGLE_LIMIT_MESSAGE.into());
+                    if triangles > MAX_MODEL_TRIANGLES {
+                        return Err(triangle_limit_message());
                     }
                     let indices = [
                         index(&tag, b"v1")? as usize,
@@ -145,6 +152,10 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
                         .push(indices);
                 }
                 b"component" if current.is_some() => {
+                    components += 1;
+                    if components > MAX_MODEL_COMPONENT_REFERENCES {
+                        return Err("3MF component reference limit exceeded".into());
+                    }
                     if attribute(&tag, b"path")?.is_some() {
                         return Err(MULTIPART_MODEL_MESSAGE.into());
                     }
@@ -180,13 +191,16 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
     let mut expanded = 0;
     while let Some((id, matrix, depth)) = stack.pop() {
         expanded += 1;
-        if expanded > MAX_TRIANGLES || stack.len() > MAX_TRIANGLES {
-            return Err("3MF component limit exceeded".into());
+        if expanded > MAX_MODEL_COMPONENT_EXPANSIONS {
+            return Err("3MF component expansion limit exceeded".into());
         }
         if depth > 16 {
             return Err("3MF component nesting limit exceeded".into());
         }
         let object = objects.get(&id).ok_or("3MF references a missing object")?;
+        if expanded + stack.len() + object.components.len() > MAX_MODEL_COMPONENT_EXPANSIONS {
+            return Err("3MF component expansion limit exceeded".into());
+        }
         for &(id, child) in &object.components {
             stack.push((id, combine(matrix, child), depth + 1));
         }
@@ -196,8 +210,8 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
             else {
                 return Err("3MF triangle references a missing vertex".into());
             };
-            if faces.len() >= MAX_TRIANGLES {
-                return Err(TRIANGLE_LIMIT_MESSAGE.into());
+            if faces.len() >= MAX_MODEL_TRIANGLES {
+                return Err(triangle_limit_message());
             }
             faces.push([
                 transform(matrix, a),
@@ -217,8 +231,8 @@ fn stl(bytes: &[u8]) -> Result<Vec<[Point; 3]>, String> {
         let count =
             u32::from_le_bytes(bytes[80..84].try_into().map_err(|_| "Invalid STL")?) as usize;
         if count.checked_mul(50).and_then(|n| n.checked_add(84)) == Some(bytes.len()) {
-            if count > MAX_TRIANGLES {
-                return Err(TRIANGLE_LIMIT_MESSAGE.into());
+            if count > MAX_MODEL_TRIANGLES {
+                return Err(triangle_limit_message());
             }
             let mut faces = Vec::with_capacity(count);
             for face in bytes[84..].as_chunks::<50>().0 {
@@ -269,8 +283,8 @@ fn stl(bytes: &[u8]) -> Result<Vec<[Point; 3]>, String> {
         ];
         points.push(point);
         if points.len() == 3 {
-            if faces.len() >= MAX_TRIANGLES {
-                return Err(TRIANGLE_LIMIT_MESSAGE.into());
+            if faces.len() >= MAX_MODEL_TRIANGLES {
+                return Err(triangle_limit_message());
             }
             faces.push([points[0], points[1], points[2]]);
             points.clear();
@@ -298,17 +312,19 @@ fn shade(
     progress(ModelPreviewStage::Rendering {
         triangles: faces.len(),
     });
-    let mut projected = Vec::with_capacity(faces.len());
-    let mut min = [f32::INFINITY; 2];
-    let mut max = [f32::NEG_INFINITY; 2];
-    for face in faces {
-        let points = face.map(|[x, y, z]| {
+    let project = |face: [Point; 3]| {
+        face.map(|[x, y, z]| {
             [
                 -0.83 * x + 0.55 * y,
                 0.35 * x + 0.53 * y + 0.77 * z,
                 -0.43 * x - 0.64 * y + 0.64 * z,
             ]
-        });
+        })
+    };
+    let mut min = [f32::INFINITY; 2];
+    let mut max = [f32::NEG_INFINITY; 2];
+    for face in faces {
+        let points = project(*face);
         if points.iter().flatten().any(|value| !value.is_finite()) {
             return Err("Invalid transformed model coordinate".into());
         }
@@ -318,6 +334,22 @@ fn shade(
                 max[axis] = max[axis].max(p[axis]);
             }
         }
+    }
+    let extent = (max[0] - min[0]).max(max[1] - min[1]);
+    if !extent.is_finite() || extent <= 0. {
+        return Err("Model has no visible extent".into());
+    }
+    let scale = (width.min(height) as f32 * 0.82) / extent;
+    let center = [
+        min[0] + (max[0] - min[0]) * 0.5,
+        min[1] + (max[1] - min[1]) * 0.5,
+    ];
+    let mut pixmap = Pixmap::new(width, height).ok_or("Cannot allocate model preview")?;
+    pixmap.fill(Color::from_rgba8(surface[0], surface[1], surface[2], 255));
+    let mut depths = vec![f32::NEG_INFINITY; (width * height) as usize];
+    let mut work = 0u64;
+    for face in faces {
+        let points = project(*face);
         let a = [
             points[1][0] - points[0][0],
             points[1][1] - points[0][1],
@@ -340,20 +372,7 @@ fn shade(
         } else {
             0.58
         };
-        projected.push((points, light));
-    }
-    let extent = (max[0] - min[0]).max(max[1] - min[1]);
-    if !extent.is_finite() || extent <= 0. {
-        return Err("Model has no visible extent".into());
-    }
-    let scale = (width.min(height) as f32 * 0.82) / extent;
-    let center = [(min[0] + max[0]) * 0.5, (min[1] + max[1]) * 0.5];
-    let mut pixmap = Pixmap::new(width, height).ok_or("Cannot allocate model preview")?;
-    pixmap.fill(Color::from_rgba8(surface[0], surface[1], surface[2], 255));
-    let mut depths = vec![f32::NEG_INFINITY; (width * height) as usize];
-    let mut work = 0u64;
-    for (face, light) in projected {
-        let face = face.map(|point| {
+        let face = points.map(|point| {
             [
                 width as f32 * 0.5 + (point[0] - center[0]) * scale,
                 height as f32 * 0.5 - (point[1] - center[1]) * scale,
@@ -390,7 +409,7 @@ fn shade(
         };
         let (left, right, top, bottom) = (lower(0), upper(0, width), lower(1), upper(1, height));
         work += u64::from(right.saturating_sub(left)) * u64::from(bottom.saturating_sub(top));
-        if work > 100_000_000 {
+        if work > MAX_MODEL_RASTER_WORK {
             return Err("This model is too complex to draw within the preview rendering limit. Try a lower-detail version.".into());
         }
         for y in top..bottom {
@@ -419,34 +438,6 @@ fn shade(
     }
     progress(ModelPreviewStage::Finishing);
     pixmap.encode_png().map_err(|error| error.to_string())
-}
-
-fn render_fcstd(
-    input: &Path,
-    width: u32,
-    height: u32,
-    progress: &dyn Fn(ModelPreviewStage),
-) -> Result<Vec<u8>, String> {
-    progress(ModelPreviewStage::Thumbnail);
-    let file = fs::File::open(input).map_err(|error| error.to_string())?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|_| "Invalid FreeCAD package")?;
-    if archive.len() > 4096 {
-        return Err("FreeCAD package entry limit exceeded".into());
-    }
-    let file = archive
-        .by_name("thumbnails/Thumbnail.png")
-        .map_err(|_| "This FreeCAD file has no embedded thumbnail")?;
-    if file.size() > 4 * 1024 * 1024 {
-        return Err("FreeCAD thumbnail size limit exceeded".into());
-    }
-    let mut bytes = Vec::new();
-    file.take(4 * 1024 * 1024 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Invalid FreeCAD thumbnail")?;
-    if bytes.len() > 4 * 1024 * 1024 {
-        return Err("FreeCAD thumbnail size limit exceeded".into());
-    }
-    thumbnail_png(&bytes, width, height, progress)
 }
 
 fn package_relationships(
@@ -528,77 +519,17 @@ fn render_3mf(
     surface: [u8; 3],
     progress: &dyn Fn(ModelPreviewStage),
 ) -> Result<Vec<u8>, String> {
-    let mut archive =
-        zip::ZipArchive::new(fs::File::open(input).map_err(|error| error.to_string())?)
-            .map_err(|_| "Invalid 3MF package")?;
-    if archive.len() > 256 {
-        return Err("3MF package entry limit exceeded".into());
+    let mut package = embedded::Package::open(input, ModelFormat::ThreeMf)?;
+    if let Some(png) = package.thumbnail(width, height, progress)? {
+        return Ok(png);
     }
-    let (root_model, thumbnail_parts) = package_relationships(&mut archive)?;
-    let mut thumbnails = Vec::new();
-    let mut model = None;
-    let mut model_parts = 0;
-    for i in 0..archive.len() {
-        let file = archive.by_index(i).map_err(|_| "Invalid 3MF package")?;
-        let name = file.name().to_ascii_lowercase();
-        if name.ends_with(".model") {
-            model_parts += 1;
-        }
-        if root_model
-            .as_ref()
-            .map_or(name == "3d/3dmodel.model", |root| file.name() == root)
-        {
-            model = Some(i);
-        }
-        if name.ends_with("thumbnail.png") || thumbnail_parts.iter().any(|part| part == file.name())
-        {
-            thumbnails.push(i);
-        }
-    }
-    if let [i] = thumbnails.as_slice() {
-        progress(ModelPreviewStage::Thumbnail);
-        let file = archive.by_index(*i).map_err(|_| "Invalid 3MF thumbnail")?;
-        let mut bytes = Vec::new();
-        let decoded = file
-            .take(4 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .is_ok();
-        if decoded
-            && bytes.len() <= 4 * 1024 * 1024
-            && let Ok(png) = thumbnail_png(&bytes, width, height, progress)
-        {
-            return Ok(png);
-        }
-    }
-    if model_parts > 1 {
+    if package.model_parts > 1 {
         return Err(MULTIPART_MODEL_MESSAGE.into());
     }
     progress(ModelPreviewStage::Reading);
-    let i = model.ok_or("3MF package has no model")?;
-    let file = archive.by_index(i).map_err(|_| "Invalid 3MF model")?;
-    if file.size() > MAX_MODEL_XML {
-        return Err("The unpacked 3MF model exceeds the 128 MiB preview limit.".into());
-    }
-    let mut xml = Vec::new();
-    file.take(MAX_MODEL_XML + 1)
-        .read_to_end(&mut xml)
-        .map_err(|_| "Invalid 3MF model")?;
-    if xml.len() as u64 > MAX_MODEL_XML {
-        return Err("The unpacked 3MF model exceeds the 128 MiB preview limit.".into());
-    }
-    shade(
-        &triangles_3mf(&xml)?,
-        width,
-        height,
-        accent,
-        surface,
-        progress,
-    )
-}
-
-#[cfg(test)]
-fn render(input: &Path, value: &str) -> Result<Vec<u8>, String> {
-    render_reporting(input, value, &|_| {})
+    let faces = triangles_3mf(&package.model_xml()?)?;
+    drop(package);
+    shade(&faces, width, height, accent, surface, progress)
 }
 
 pub(super) fn render_reporting(
@@ -608,9 +539,10 @@ pub(super) fn render_reporting(
 ) -> Result<Vec<u8>, String> {
     progress(ModelPreviewStage::Reading);
     let parts: Vec<_> = value.split(':').collect();
-    let [size, accent, surface] = parts.as_slice() else {
+    let [format, size, accent, surface] = parts.as_slice() else {
         return Err("Invalid model request".into());
     };
+    let format = ModelFormat::from_argument(format).ok_or("Invalid model format")?;
     let (width, height) = size.split_once('x').ok_or("Invalid model size")?;
     let width = width
         .parse::<u32>()
@@ -622,50 +554,24 @@ pub(super) fn render_reporting(
         .clamp(16, 800);
     let accent = rgb(accent)?;
     let surface = rgb(surface)?;
-    if input
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("fcstd"))
-    {
-        render_fcstd(input, width, height, progress)
-    } else if input
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("3mf"))
-    {
-        render_3mf(input, width, height, accent, surface, progress)
-    } else {
-        let bytes = fs::read(input).map_err(|error| error.to_string())?;
-        shade(&stl(&bytes)?, width, height, accent, surface, progress)
-    }
-}
-
-fn thumbnail_png(
-    bytes: &[u8],
-    width: u32,
-    height: u32,
-    progress: &dyn Fn(ModelPreviewStage),
-) -> Result<Vec<u8>, String> {
-    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Err("Invalid 3MF thumbnail".into());
-    }
-    let loader = gdk_pixbuf::PixbufLoader::new();
-    loader.connect_size_prepared(move |loader, w, h| {
-        if w > 0 && h > 0 {
-            let scale = (width as f64 / f64::from(w))
-                .min(height as f64 / f64::from(h))
-                .min(1.);
-            loader.set_size(
-                (f64::from(w) * scale).round().max(1.) as i32,
-                (f64::from(h) * scale).round().max(1.) as i32,
-            );
+    match format {
+        ModelFormat::FreeCad => thumbnail(input, format, width, height, progress),
+        ModelFormat::ThreeMf => render_3mf(input, width, height, accent, surface, progress),
+        ModelFormat::Stl => {
+            let mut bytes = Vec::new();
+            fs::File::open(input)
+                .map_err(|error| error.to_string())?
+                .take(MAX_MODEL_INPUT_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            if bytes.len() as u64 > MAX_MODEL_INPUT_BYTES {
+                return Err("Model exceeds the input size limit".into());
+            }
+            let faces = stl(&bytes)?;
+            drop(bytes);
+            shade(&faces, width, height, accent, surface, progress)
         }
-    });
-    loader.write(bytes).map_err(|_| "Invalid 3MF thumbnail")?;
-    loader.close().map_err(|_| "Invalid 3MF thumbnail")?;
-    let pixbuf = loader.pixbuf().ok_or("Invalid 3MF thumbnail")?;
-    progress(ModelPreviewStage::Finishing);
-    pixbuf
-        .save_to_bufferv("png", &[])
-        .map_err(|_| "Invalid 3MF thumbnail".into())
+    }
 }
 
 #[cfg(test)]

@@ -174,6 +174,9 @@ struct PreviewState {
     animation_generation: Rc<Cell<u64>>,
 }
 
+#[cfg(test)]
+mod tests;
+
 pub(super) const PREVIEW_LABEL: &str = "Preview";
 
 #[derive(Clone)]
@@ -914,6 +917,7 @@ impl PreviewState {
                 render_document: false,
                 pdf_page,
                 media_size: self.media_preview_size(),
+                model_palette: super::theme::ThemeManager::shared().active_model_palette(),
                 archive_password: None,
             },
             emit,
@@ -1125,6 +1129,7 @@ impl PreviewState {
                 render_document,
                 pdf_page,
                 media_size: self.media_preview_size(),
+                model_palette: super::theme::ThemeManager::shared().active_model_palette(),
                 archive_password,
             },
             emit,
@@ -1793,6 +1798,7 @@ impl PreviewState {
                     render_document: false,
                     pdf_page: page_index,
                     media_size: render_size,
+                    model_palette: super::theme::ThemeManager::shared().active_model_palette(),
                     archive_password: None,
                 },
                 emit,

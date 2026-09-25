@@ -172,7 +172,7 @@ pub struct ThemeManager {
     previewing: Cell<bool>,
     appearance: RefCell<AppearancePreferences>,
     theme_listeners: ThemeListeners,
-    active_model_palette: Cell<crate::sandbox::ModelPalette>,
+    active_model_palette: Cell<crate::services::ModelPalette>,
 }
 
 impl ThemeManager {
@@ -211,7 +211,7 @@ impl ThemeManager {
             previewing: Cell::new(false),
             appearance: RefCell::new(appearance),
             theme_listeners: ThemeListeners::default(),
-            active_model_palette: Cell::new(crate::sandbox::ModelPalette {
+            active_model_palette: Cell::new(crate::services::ModelPalette {
                 accent: 0,
                 surface: 0,
             }),
@@ -245,7 +245,7 @@ impl ThemeManager {
         self.preferences.selected_theme_id()
     }
 
-    pub(crate) fn active_model_palette(&self) -> crate::sandbox::ModelPalette {
+    pub(crate) fn active_model_palette(&self) -> crate::services::ModelPalette {
         self.active_model_palette.get()
     }
 
@@ -390,10 +390,11 @@ impl ThemeManager {
             let channel = |value: f32| (value * 255.).round() as u32;
             (channel(rgba.red()) << 16) | (channel(rgba.green()) << 8) | channel(rgba.blue())
         };
-        self.active_model_palette.set(crate::sandbox::ModelPalette {
-            accent: color(&tokens.accent),
-            surface: color(&tokens.surface),
-        });
+        self.active_model_palette
+            .set(crate::services::ModelPalette {
+                accent: color(&tokens.accent),
+                surface: color(&tokens.surface),
+            });
         super::document_media::apply_theme(tokens);
         let root_font_px = snapped_root_font_px(
             self.preferences.text_size().root_font_px(),

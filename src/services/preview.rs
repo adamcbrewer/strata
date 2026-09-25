@@ -63,6 +63,7 @@ pub struct PreviewRequest {
     pub render_document: bool,
     pub pdf_page: i32,
     pub media_size: MediaPreviewSize,
+    pub model_palette: super::ModelPalette,
     pub archive_password: Option<SecretString>,
 }
 
@@ -219,15 +220,7 @@ pub(crate) fn supports_remote_video(name: &OsStr) -> bool {
 }
 
 pub(crate) fn is_model(name: &OsStr) -> bool {
-    Path::new(name)
-        .extension()
-        .and_then(OsStr::to_str)
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "stl" | "3mf" | "fcstd"
-            )
-        })
+    super::ModelFormat::for_name(name).is_some()
 }
 
 pub(crate) fn has_plain_text_extension(name: &OsStr) -> bool {
