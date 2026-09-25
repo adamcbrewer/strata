@@ -386,6 +386,27 @@ fn install_result_interactions(
         }
         focus_items_for_press();
     });
+    let weak_item = item.downgrade();
+    let model_for_release = model.clone();
+    let selection_for_release = selection.clone();
+    let pointer_for_release = pointer_activation.clone();
+    let single_click = interactions.behavior.single_click.clone();
+    click.connect_released(move |gesture, _, x, y| {
+        if pointer_for_release.activation() != Some(true)
+            || selection_for_release.selection().size() > 1
+            || !gesture.widget().is_some_and(|widget| widget.contains(x, y))
+        {
+            return;
+        }
+        let Some(entry) = weak_item
+            .upgrade()
+            .and_then(|item| collection_entry(&model_for_release, item.position()))
+        else {
+            return;
+        };
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+        single_click(entry);
+    });
 
     let drag = gtk::DragSource::builder()
         .actions(gtk::gdk::DragAction::COPY | gtk::gdk::DragAction::MOVE)
@@ -610,7 +631,7 @@ pub(super) fn build_collection(
             grid.set_min_columns(1);
             grid.set_max_columns(max_columns);
             grid.set_enable_rubberband(false);
-            grid.set_single_click_activate(true);
+            grid.set_single_click_activate(false);
             grid.set_vexpand(false);
             grid.upcast()
         }
@@ -618,7 +639,7 @@ pub(super) fn build_collection(
             let list = gtk::ListView::new(Some(selection.clone()), Some(factory));
             list.add_css_class("file-list");
             list.set_enable_rubberband(false);
-            list.set_single_click_activate(true);
+            list.set_single_click_activate(false);
             list.set_vexpand(true);
             list.upcast()
         }
