@@ -23,6 +23,7 @@ use crate::{
 mod appimage;
 mod document_media;
 mod media;
+mod model;
 mod raw_metadata;
 
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -111,6 +112,16 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             let (page, size) = pdf_render_request(value)?;
             let (png, page, pages) = render_pdf_page(input, page, size)?;
             (png, Some(format!("{page} {pages}")))
+        }
+        "preview-model" => {
+            let png = match model::render(input, value) {
+                Ok(result) => result,
+                Err(message) => {
+                    let _ = fs::write(output.with_file_name("result.error"), message.as_bytes());
+                    return Err(message);
+                }
+            };
+            (png, None)
         }
         _ => return Err("Unknown preview helper operation".to_owned()),
     };

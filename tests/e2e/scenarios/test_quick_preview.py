@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import pytest
 from pathlib import Path
+import io
+import zipfile
+from PIL import Image
 
 from harness.fixtures import FixtureTree
 from harness.modes import ALL_MODES, NEXT_ENTRY_KEY, PREVIOUS_ENTRY_KEY
@@ -16,6 +19,58 @@ PREVIEW_FIXTURE = {
     "data.csv": "name,value\nalpha,1\n",
     "folder": {"inner.txt": "inner\n", "nested-notes.txt": "nested preview fixture\n"},
 }
+
+
+@pytest.mark.preferences(browser_mode="list", single_click_previews=False)
+def test_model_preview_renders_stl_prefers_thumbnails_and_reports_limits(strata):
+    folder = strata.fixture.root
+    (folder / "sample.stl").write_text(
+        "solid sample\nfacet normal 0 0 1\nouter loop\n"
+        "vertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\n"
+        "endloop\nendfacet\nendsolid\n"
+    )
+    with zipfile.ZipFile(folder / "sample.3mf", "w") as package:
+        package.writestr(
+            "3D/3dmodel.model",
+            '<model><resources><object id="1"><mesh><vertices>'
+            '<vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/>'
+            '<vertex x="0" y="1" z="0"/></vertices><triangles>'
+            '<triangle v1="0" v2="1" v3="2"/>'
+            '</triangles></mesh></object></resources><build><item objectid="1"/></build></model>',
+        )
+        thumbnail = io.BytesIO()
+        Image.new("RGB", (32, 32), "red").save(thumbnail, format="PNG")
+        package.writestr("Metadata/thumbnail.png", thumbnail.getvalue())
+
+    strata.wait(lambda: strata.entry("sample.stl"), "STL file in listing")
+    strata.select_entry("sample.stl")
+    strata.keyboard.press("space")
+    strata.wait(lambda: strata.preview() and strata.preview().find(role="image", name="Model preview"), "rendered STL preview")
+    strata.pointer.click(strata.preview().find(role="button", name="Close preview (Space)"))
+    strata.wait(lambda: strata.preview() is None, "STL preview to close")
+
+    strata.select_entry("sample.3mf")
+    strata.keyboard.press("space")
+    strata.wait(
+        lambda: strata.preview() and strata.preview().find(role="image", name="Model preview"),
+        "embedded 3MF thumbnail",
+    )
+    strata.pointer.click(strata.preview().find(role="button", name="Close preview (Space)"))
+    strata.wait(lambda: strata.preview() is None, "model preview to close")
+    with zipfile.ZipFile(folder / "missing.FCStd", "w") as package:
+        package.writestr("Document.xml", "<Document/>")
+    strata.wait(lambda: strata.entry("missing.FCStd"), "FreeCAD file in listing")
+    strata.select_entry("missing.FCStd")
+    strata.keyboard.press("space")
+    strata.wait(lambda: strata.preview_shows("This FreeCAD file has no embedded thumbnail"), "specific sandbox error")
+    strata.pointer.click(strata.preview().find(role="button", name="Close preview (Space)"))
+    strata.wait(lambda: strata.preview() is None, "FreeCAD preview to close")
+    with (folder / "oversized.stl").open("wb") as file:
+        file.truncate(128 * 1024 * 1024 + 1)
+    strata.wait(lambda: strata.entry("oversized.stl"), "oversized STL in listing")
+    strata.select_entry("oversized.stl")
+    strata.keyboard.press("space")
+    strata.wait(lambda: strata.preview_shows("128 MiB preview limit"), "explicit file size limit")
 
 
 @pytest.fixture

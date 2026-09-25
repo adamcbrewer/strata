@@ -52,6 +52,9 @@ pub(crate) fn entry_supports_quick_preview(entry: &FileEntry) -> bool {
     if !matches!(entry.kind, EntryKind::File | EntryKind::FileSymbolicLink) {
         return false;
     }
+    if crate::services::is_model(&entry.native_name) {
+        return entry.location.native_path().is_some();
+    }
 
     let (content_type, uncertain) =
         gio::content_type_guess(Some(Path::new(&entry.native_name)), None::<&[u8]>);
@@ -413,6 +416,24 @@ impl PreviewDrawer {
                 preferences.set_preview_text_wrap(button.is_active());
             }
         });
+        let weak = Rc::downgrade(&state);
+        super::theme::ThemeManager::shared().bind_theme_preference(
+            &state.pane,
+            |manager| manager.active_model_palette(),
+            move |_, _| {
+                let Some(state) = weak.upgrade() else {
+                    return;
+                };
+                let entry = state.current.borrow().clone();
+                if let Some(entry) = entry
+                    && crate::services::is_model(&entry.native_name)
+                    && state.revealer.reveals_child()
+                    && state.current_request.get().is_some()
+                {
+                    state.load(entry, 0);
+                }
+            },
+        );
         let weak = Rc::downgrade(&state);
         close.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
@@ -955,6 +976,7 @@ impl PreviewState {
                         }
                     }
                     PreviewContent::Image
+                    | PreviewContent::Model { .. }
                     | PreviewContent::Media
                     | PreviewContent::SandboxedMedia { .. }
                     | PreviewContent::Archive { .. }
@@ -1277,12 +1299,16 @@ impl PreviewState {
                     super::virtual_preview::rendered_document(document, warnings, false, None);
                 self.content.append(&view);
             }
-            PreviewContent::Rasterized { png } => {
-                self.print.set_visible(true);
+            PreviewContent::Rasterized { png } | PreviewContent::Model { png, .. } => {
+                self.print
+                    .set_visible(!crate::services::is_model(&preview.entry.native_name));
                 let bytes = glib::Bytes::from_owned(png);
                 match gtk::gdk::Texture::from_bytes(&bytes) {
                     Ok(texture) => {
                         let picture = gtk::Picture::for_paintable(&texture);
+                        if crate::services::is_model(&preview.entry.native_name) {
+                            super::accessibility::set_label(&picture, "Model preview");
+                        }
                         picture.add_css_class("preview-image");
                         picture.set_can_shrink(true);
                         picture.set_content_fit(gtk::ContentFit::Contain);

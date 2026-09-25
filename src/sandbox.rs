@@ -65,6 +65,18 @@ pub(crate) struct PdfRenderSize {
     pub(crate) height: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ModelPalette {
+    pub(crate) accent: u32,
+    pub(crate) surface: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ModelRender {
+    pub(crate) size: MediaPreviewSize,
+    pub(crate) palette: ModelPalette,
+}
+
 impl PdfRenderSize {
     const MAX_WIDTH: i32 = 1_400;
     const MAX_HEIGHT: i32 = 1_800;
@@ -111,6 +123,7 @@ pub(crate) enum ParseOperation {
     PreviewWorkbook,
     PreviewDocument,
     PreviewPdf(PdfRenderSize),
+    PreviewModel(ModelRender),
     PreviewMedia(MediaPreviewSize),
     ArchiveList {
         format: ArchiveFormat,
@@ -136,6 +149,7 @@ impl ParseOperation {
             Self::PreviewWorkbook => "preview-workbook",
             Self::PreviewDocument => "preview-document",
             Self::PreviewPdf(_) => "preview-pdf",
+            Self::PreviewModel(_) => "preview-model",
             Self::PreviewMedia(_) => "preview-media",
             Self::ArchiveList { .. } => "archive-list",
         }
@@ -172,6 +186,10 @@ impl ParseOperation {
             | Self::DocumentMermaid
             | Self::DocumentMath { .. } => Some((800, 800, 800 * 800)),
             Self::PreviewPdf(size) => Some(size.image_limits()),
+            Self::PreviewModel(render) => {
+                let size = MediaPreviewSize::new(render.size.width, render.size.height);
+                Some((size.width as u32, size.height as u32, 1280 * 1280))
+            }
             Self::PreviewMedia(_)
             | Self::MediaMetadata
             | Self::RawMetadata
@@ -189,6 +207,7 @@ impl ParseOperation {
             | Self::PreviewImage
             | Self::RawMetadata
             | Self::PreviewPdf(_) => Some(MAX_RASTER_INPUT_BYTES),
+            Self::PreviewModel(_) => Some(128 * 1024 * 1024),
             Self::PreviewWorkbook => Some(crate::services::table::WORKBOOK_BYTE_LIMIT),
             Self::PreviewDocument => Some(crate::services::docx::DOCX_BYTE_LIMIT),
             Self::DocumentImage => Some(crate::services::document_media::IMAGE_INPUT_LIMIT),
@@ -276,7 +295,11 @@ fn parse_sandboxed(
         .input_size_limit()
         .is_some_and(|limit| input_metadata.len() > limit)
     {
-        return Err("Preview input exceeds the supported size limit".to_owned());
+        return Err(if matches!(operation, ParseOperation::PreviewModel(_)) {
+            "This model file exceeds the 128 MiB preview limit. Try a smaller or lower-detail version.".to_owned()
+        } else {
+            "Preview input exceeds the supported size limit".to_owned()
+        });
     }
     if let Some(result) = browser::preview(&input, &operation, cancellation) {
         return result.map(|data| ParseOutput {
@@ -336,6 +359,12 @@ fn parse_sandboxed(
     };
     let status = wait_for_renderer(&mut child, cancellation, timeout)?;
     if !status.success() {
+        if matches!(operation, ParseOperation::PreviewModel(_))
+            && let Ok(data) = read_private_output(&output.path().join("result.error"), 512)
+            && let Ok(message) = String::from_utf8(data)
+        {
+            return Err(message);
+        }
         return Err("The sandboxed preview renderer failed".to_owned());
     }
 
@@ -595,6 +624,13 @@ fn sandbox_command(
                 let size = PdfRenderSize::new(size.width, size.height);
                 format!("{value}:{}x{}", size.width, size.height)
             }
+            ParseOperation::PreviewModel(render) => format!(
+                "{}x{}:{:06x}:{:06x}",
+                render.size.width,
+                render.size.height,
+                render.palette.accent,
+                render.palette.surface,
+            ),
             ParseOperation::ArchiveList { format, .. } => format.extension().to_owned(),
             _ => value.to_string(),
         };

@@ -121,6 +121,9 @@ pub enum PreviewContent {
     Rasterized {
         png: Vec<u8>,
     },
+    Model {
+        png: Vec<u8>,
+    },
     SandboxedMedia {
         media: SandboxedMedia,
     },
@@ -181,6 +184,18 @@ pub(crate) fn supports_remote_video(name: &OsStr) -> bool {
         .extension()
         .and_then(OsStr::to_str)
         .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "mov" | "mp4"))
+}
+
+pub(crate) fn is_model(name: &OsStr) -> bool {
+    Path::new(name)
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "stl" | "3mf" | "fcstd"
+            )
+        })
 }
 
 pub(crate) fn has_plain_text_extension(name: &OsStr) -> bool {

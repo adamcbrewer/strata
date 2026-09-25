@@ -17,7 +17,7 @@ use crate::{
         gio_file_for_location,
         local_operations::{ArchiveListingStatus, decode_archive_listing},
     },
-    sandbox::{Cancellation, MediaPreviewBackend, ParseOperation, PdfRenderSize},
+    sandbox::{Cancellation, MediaPreviewBackend, ModelRender, ParseOperation, PdfRenderSize},
     services::{
         LoadHandle, MediaPreviewSize, Preview, PreviewContent, PreviewEvent, PreviewProvider,
         PreviewRequest, SandboxedMedia, content_family, document_kind, has_plain_text_extension,
@@ -117,6 +117,7 @@ struct PreviewCacheKey {
     path: PathBuf,
     modified: i64,
     pdf_page: Option<(i32, PdfRenderSize)>,
+    model: Option<ModelRender>,
 }
 
 impl PreviewCache {
@@ -156,7 +157,9 @@ impl PreviewCache {
 
 fn preview_content_size(content: &PreviewContent) -> usize {
     match content {
-        PreviewContent::Rasterized { png } | PreviewContent::Pdf { png, .. } => png.len(),
+        PreviewContent::Rasterized { png }
+        | PreviewContent::Pdf { png, .. }
+        | PreviewContent::Model { png, .. } => png.len(),
         PreviewContent::SandboxedMedia { .. } => 0,
         PreviewContent::Text { content, .. } => content.len(),
         _ => 0,
@@ -217,6 +220,9 @@ impl LocalPreviewProvider {
                 gio::content_type_guess(Some(Path::new(&entry.native_name)), None::<&[u8]>);
             let mut content_type = guessed_type.to_string();
             let mut content = content_family(&content_type);
+            if crate::services::is_model(&entry.native_name) {
+                content = PreviewContent::Unsupported;
+            }
 
             if matches!(content, PreviewContent::Unsupported)
                 && has_plain_text_extension(&entry.native_name)
@@ -228,7 +234,7 @@ impl LocalPreviewProvider {
                 content_type = "text/plain".to_owned();
             }
 
-            if matches!(content, PreviewContent::Unsupported)
+            if !crate::services::is_model(&entry.native_name) && matches!(content, PreviewContent::Unsupported)
                 && (uncertain || entry.native_name.is_empty())
             {
                 let file = gio_file_for_location(&entry.location);
@@ -460,20 +466,27 @@ impl LocalPreviewProvider {
                 return;
             }
 
-            let operation = match content {
+            let model = crate::services::is_model(&entry.native_name).then(|| ModelRender {
+                size: MediaPreviewSize::new(request.media_size.width.min(800), request.media_size.height.min(800)),
+                palette: crate::ui::theme::ThemeManager::shared().active_model_palette(),
+            });
+            let operation = if let Some(render) = model {
+                Some(ParseOperation::PreviewModel(render))
+            } else { match content {
                 PreviewContent::Pdf { .. } => Some(ParseOperation::PreviewPdf(pdf_render_size(
                     request.media_size,
                 ))),
                 PreviewContent::Image => Some(ParseOperation::PreviewImage),
                 PreviewContent::Media => None,
                 PreviewContent::Text { .. }
+                | PreviewContent::Model { .. }
                 | PreviewContent::Document { .. }
                 | PreviewContent::Rendered { .. }
                 | PreviewContent::Rasterized { .. }
                 | PreviewContent::SandboxedMedia { .. }
                 | PreviewContent::Archive { .. }
                 | PreviewContent::Unsupported => None,
-            };
+            }};
             if let Some(operation) = &operation {
                 let staged = if entry.location.native_path().is_none() {
                     if !matches!(operation, ParseOperation::PreviewImage) {
@@ -523,6 +536,7 @@ impl LocalPreviewProvider {
                     path: path.clone(),
                     modified,
                     pdf_page,
+                    model,
                 });
                 if let Some(cached) = cache_key
                     .as_ref()
@@ -541,7 +555,7 @@ impl LocalPreviewProvider {
                     return;
                 }
 
-                let pdf_permit = if matches!(operation, ParseOperation::PreviewPdf(_)) {
+                let pdf_permit = if matches!(operation, ParseOperation::PreviewPdf(_) | ParseOperation::PreviewModel(_)) {
                     let Some(permit) = request_pdf_render_permit().acquire().await else {
                         return;
                     };
@@ -575,6 +589,9 @@ impl LocalPreviewProvider {
                     return;
                 }
                 content = match render {
+                    Ok(Ok(output)) if model.is_some() => PreviewContent::Model {
+                        png: output.data,
+                    },
                     Ok(Ok(output)) if matches!(operation, ParseOperation::PreviewPdf(_)) => {
                         if let Some(mtime) = modified
                             && request.pdf_page == 0
