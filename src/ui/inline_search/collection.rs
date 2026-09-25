@@ -391,7 +391,7 @@ fn install_result_interactions(
     let selection_for_release = selection.clone();
     let pointer_for_release = pointer_activation.clone();
     let single_click = interactions.behavior.single_click.clone();
-    click.connect_released(move |gesture, _, x, y| {
+    click.connect_released(move |gesture, presses, x, y| {
         if pointer_for_release.activation() != Some(true)
             || selection_for_release.selection().size() > 1
             || !gesture.widget().is_some_and(|widget| widget.contains(x, y))
@@ -405,7 +405,9 @@ fn install_result_interactions(
             return;
         };
         gesture.set_state(gtk::EventSequenceState::Claimed);
-        single_click(entry);
+        if presses == 1 {
+            single_click(entry);
+        }
     });
 
     let drag = gtk::DragSource::builder()
@@ -450,7 +452,6 @@ pub(super) fn build_collection(
 ) -> (ResultCollection, gtk::ScrolledWindow, gtk::Overlay) {
     let multiple_selection = behavior.multiple_selection.clone();
     let activate = behavior.activate.clone();
-    let single_click = behavior.single_click.clone();
     let (kind, max_columns) = match presentation {
         SearchPresentation::Rows => (ResultKind::Rows, None),
         SearchPresentation::Icons {
@@ -667,15 +668,13 @@ pub(super) fn build_collection(
         });
     }
     let sorted_for_activate = sorted.clone();
-    let selection_for_activate = selection.clone();
     let dispatch_activate: Rc<dyn Fn(u32)> = Rc::new(move |position| {
         let Some(entry) = collection_entry(&sorted_for_activate, position) else {
             return;
         };
-        match pointer_activation.activation() {
-            Some(true) if selection_for_activate.selection().size() <= 1 => single_click(entry),
-            Some(_) => {}
-            None => activate(entry),
+        // Pointer releases are handled above; GTK activation is keyboard-only.
+        if pointer_activation.activation().is_none() {
+            activate(entry);
         }
     });
     if let Some(list) = view.downcast_ref::<gtk::ListView>() {
