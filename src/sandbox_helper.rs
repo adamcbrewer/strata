@@ -114,7 +114,15 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             (png, Some(format!("{page} {pages}")))
         }
         "preview-model" => {
-            let png = match model::render(input, value) {
+            let progress = |stage| {
+                if let Ok(bytes) = serde_json::to_vec(&stage) {
+                    let pending = output.with_file_name("result.progress.tmp");
+                    if fs::write(&pending, bytes).is_ok() {
+                        let _ = fs::rename(pending, output.with_file_name("result.progress"));
+                    }
+                }
+            };
+            let png = match model::render_reporting(input, value, &progress) {
                 Ok(result) => result,
                 Err(message) => {
                     let _ = fs::write(output.with_file_name("result.error"), message.as_bytes());

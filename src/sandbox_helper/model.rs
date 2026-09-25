@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, fs, io::Read, path::Path};
 
+use crate::services::ModelPreviewStage;
 use gdk_pixbuf::prelude::*;
 use quick_xml::{
     Reader,
@@ -14,6 +15,7 @@ const TRIANGLE_LIMIT_MESSAGE: &str =
     "This model exceeds the 2 million triangle preview limit. Try a lower-detail version.";
 const MAX_VERTICES: usize = 2_000_000;
 const MAX_MODEL_XML: u64 = 128 * 1024 * 1024;
+const MULTIPART_MODEL_MESSAGE: &str = "Multipart model detected. Unable to render preview.";
 
 type Point = [f32; 3];
 type Matrix = [f32; 12];
@@ -143,6 +145,9 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
                         .push(indices);
                 }
                 b"component" if current.is_some() => {
+                    if attribute(&tag, b"path")?.is_some() {
+                        return Err(MULTIPART_MODEL_MESSAGE.into());
+                    }
                     let id = index(&tag, b"objectid")?;
                     let matrix = matrix(attribute(&tag, b"transform")?)?;
                     objects
@@ -152,6 +157,9 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
                         .push((id, matrix));
                 }
                 b"item" => {
+                    if attribute(&tag, b"path")?.is_some() {
+                        return Err(MULTIPART_MODEL_MESSAGE.into());
+                    }
                     if items.len() >= 1024 {
                         return Err("3MF build item limit exceeded".into());
                     }
@@ -285,7 +293,11 @@ fn shade(
     height: u32,
     accent: [u8; 3],
     surface: [u8; 3],
+    progress: &dyn Fn(ModelPreviewStage),
 ) -> Result<Vec<u8>, String> {
+    progress(ModelPreviewStage::Rendering {
+        triangles: faces.len(),
+    });
     let mut projected = Vec::with_capacity(faces.len());
     let mut min = [f32::INFINITY; 2];
     let mut max = [f32::NEG_INFINITY; 2];
@@ -405,10 +417,17 @@ fn shade(
             }
         }
     }
+    progress(ModelPreviewStage::Finishing);
     pixmap.encode_png().map_err(|error| error.to_string())
 }
 
-fn render_fcstd(input: &Path, width: u32, height: u32) -> Result<Vec<u8>, String> {
+fn render_fcstd(
+    input: &Path,
+    width: u32,
+    height: u32,
+    progress: &dyn Fn(ModelPreviewStage),
+) -> Result<Vec<u8>, String> {
+    progress(ModelPreviewStage::Thumbnail);
     let file = fs::File::open(input).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(file).map_err(|_| "Invalid FreeCAD package")?;
     if archive.len() > 4096 {
@@ -427,7 +446,78 @@ fn render_fcstd(input: &Path, width: u32, height: u32) -> Result<Vec<u8>, String
     if bytes.len() > 4 * 1024 * 1024 {
         return Err("FreeCAD thumbnail size limit exceeded".into());
     }
-    thumbnail_png(&bytes, width, height)
+    thumbnail_png(&bytes, width, height, progress)
+}
+
+fn package_relationships(
+    archive: &mut zip::ZipArchive<fs::File>,
+) -> Result<(Option<String>, Vec<String>), String> {
+    let file = match archive.by_name("_rels/.rels") {
+        Ok(file) => file,
+        Err(zip::result::ZipError::FileNotFound) => return Ok((None, Vec::new())),
+        Err(_) => return Err("Unable to read 3MF package relationships".into()),
+    };
+    let mut xml = Vec::new();
+    file.take(64 * 1024 + 1)
+        .read_to_end(&mut xml)
+        .map_err(|_| "Invalid 3MF package relationships")?;
+    if xml.len() > 64 * 1024 {
+        return Err("3MF package relationships exceed the 64 KiB preview limit".into());
+    }
+    let mut reader = Reader::from_reader(xml.as_slice());
+    let mut model = None;
+    let mut thumbnails = Vec::new();
+    loop {
+        match reader
+            .read_event()
+            .map_err(|_| "Invalid 3MF package relationships")?
+        {
+            Event::Start(tag) | Event::Empty(tag)
+                if tag.local_name().as_ref() == b"Relationship" =>
+            {
+                let kind = attribute(&tag, b"Type")?.unwrap_or_default();
+                let is_model =
+                    kind == "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel";
+                let is_thumbnail = kind
+                    == "http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail";
+                if !is_model && !is_thumbnail {
+                    continue;
+                }
+                if attribute(&tag, b"TargetMode")?.as_deref() == Some("External") {
+                    if is_model {
+                        return Err("External 3MF model references are not supported".into());
+                    }
+                    continue;
+                }
+                let target =
+                    attribute(&tag, b"Target")?.ok_or("Missing 3MF relationship target")?;
+                let target = quick_xml::escape::unescape(&target)
+                    .map_err(|_| "Invalid 3MF relationship target")?;
+                let target = target.trim_start_matches('/');
+                if target.is_empty()
+                    || target.contains(['\\', ':', '?', '#'])
+                    || target
+                        .split('/')
+                        .any(|part| matches!(part, ".." | "." | ""))
+                {
+                    return Err("Invalid 3MF package part reference".into());
+                }
+                if is_model {
+                    if model.replace(target.to_owned()).is_some() {
+                        return Err("3MF package contains multiple root model relationships".into());
+                    }
+                } else {
+                    thumbnails.push(target.to_owned());
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if model.is_none() {
+        return Err("3MF package has no root model relationship".into());
+    }
+    Ok((model, thumbnails))
 }
 
 fn render_3mf(
@@ -436,6 +526,7 @@ fn render_3mf(
     height: u32,
     accent: [u8; 3],
     surface: [u8; 3],
+    progress: &dyn Fn(ModelPreviewStage),
 ) -> Result<Vec<u8>, String> {
     let mut archive =
         zip::ZipArchive::new(fs::File::open(input).map_err(|error| error.to_string())?)
@@ -443,35 +534,46 @@ fn render_3mf(
     if archive.len() > 256 {
         return Err("3MF package entry limit exceeded".into());
     }
+    let (root_model, thumbnail_parts) = package_relationships(&mut archive)?;
     let mut thumbnails = Vec::new();
     let mut model = None;
+    let mut model_parts = 0;
     for i in 0..archive.len() {
         let file = archive.by_index(i).map_err(|_| "Invalid 3MF package")?;
         let name = file.name().to_ascii_lowercase();
-        if name.ends_with(".model") && name.starts_with("3d/") && model.is_none() {
+        if name.ends_with(".model") {
+            model_parts += 1;
+        }
+        if root_model
+            .as_ref()
+            .map_or(name == "3d/3dmodel.model", |root| file.name() == root)
+        {
             model = Some(i);
         }
-        if name.ends_with("thumbnail.png") && file.size() <= 4 * 1024 * 1024 {
-            thumbnails.push((name != "metadata/thumbnail.png", i));
+        if name.ends_with("thumbnail.png") || thumbnail_parts.iter().any(|part| part == file.name())
+        {
+            thumbnails.push(i);
         }
     }
-    thumbnails.sort_unstable();
-    for (_, i) in thumbnails {
-        let file = archive.by_index(i).map_err(|_| "Invalid 3MF thumbnail")?;
+    if let [i] = thumbnails.as_slice() {
+        progress(ModelPreviewStage::Thumbnail);
+        let file = archive.by_index(*i).map_err(|_| "Invalid 3MF thumbnail")?;
         let mut bytes = Vec::new();
-        if file
+        let decoded = file
             .take(4 * 1024 * 1024 + 1)
             .read_to_end(&mut bytes)
-            .is_err()
-        {
-            continue;
-        }
-        if bytes.len() <= 4 * 1024 * 1024
-            && let Ok(png) = thumbnail_png(&bytes, width, height)
+            .is_ok();
+        if decoded
+            && bytes.len() <= 4 * 1024 * 1024
+            && let Ok(png) = thumbnail_png(&bytes, width, height, progress)
         {
             return Ok(png);
         }
     }
+    if model_parts > 1 {
+        return Err(MULTIPART_MODEL_MESSAGE.into());
+    }
+    progress(ModelPreviewStage::Reading);
     let i = model.ok_or("3MF package has no model")?;
     let file = archive.by_index(i).map_err(|_| "Invalid 3MF model")?;
     if file.size() > MAX_MODEL_XML {
@@ -484,10 +586,27 @@ fn render_3mf(
     if xml.len() as u64 > MAX_MODEL_XML {
         return Err("The unpacked 3MF model exceeds the 128 MiB preview limit.".into());
     }
-    shade(&triangles_3mf(&xml)?, width, height, accent, surface)
+    shade(
+        &triangles_3mf(&xml)?,
+        width,
+        height,
+        accent,
+        surface,
+        progress,
+    )
 }
 
-pub(super) fn render(input: &Path, value: &str) -> Result<Vec<u8>, String> {
+#[cfg(test)]
+fn render(input: &Path, value: &str) -> Result<Vec<u8>, String> {
+    render_reporting(input, value, &|_| {})
+}
+
+pub(super) fn render_reporting(
+    input: &Path,
+    value: &str,
+    progress: &dyn Fn(ModelPreviewStage),
+) -> Result<Vec<u8>, String> {
+    progress(ModelPreviewStage::Reading);
     let parts: Vec<_> = value.split(':').collect();
     let [size, accent, surface] = parts.as_slice() else {
         return Err("Invalid model request".into());
@@ -507,19 +626,24 @@ pub(super) fn render(input: &Path, value: &str) -> Result<Vec<u8>, String> {
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("fcstd"))
     {
-        render_fcstd(input, width, height)
+        render_fcstd(input, width, height, progress)
     } else if input
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("3mf"))
     {
-        render_3mf(input, width, height, accent, surface)
+        render_3mf(input, width, height, accent, surface, progress)
     } else {
         let bytes = fs::read(input).map_err(|error| error.to_string())?;
-        shade(&stl(&bytes)?, width, height, accent, surface)
+        shade(&stl(&bytes)?, width, height, accent, surface, progress)
     }
 }
 
-fn thumbnail_png(bytes: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+fn thumbnail_png(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+    progress: &dyn Fn(ModelPreviewStage),
+) -> Result<Vec<u8>, String> {
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Err("Invalid 3MF thumbnail".into());
     }
@@ -538,6 +662,7 @@ fn thumbnail_png(bytes: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Strin
     loader.write(bytes).map_err(|_| "Invalid 3MF thumbnail")?;
     loader.close().map_err(|_| "Invalid 3MF thumbnail")?;
     let pixbuf = loader.pixbuf().ok_or("Invalid 3MF thumbnail")?;
+    progress(ModelPreviewStage::Finishing);
     pixbuf
         .save_to_bufferv("png", &[])
         .map_err(|_| "Invalid 3MF thumbnail".into())

@@ -150,6 +150,10 @@ pub(crate) const INCORRECT_ARCHIVE_PASSWORD: &str = "The password is incorrect."
 
 #[derive(Clone, Debug)]
 pub enum PreviewEvent {
+    Progress {
+        request_id: PreviewRequestId,
+        stage: ModelPreviewStage,
+    },
     Ready(Preview),
     Failed {
         request_id: PreviewRequestId,
@@ -160,6 +164,34 @@ pub enum PreviewEvent {
         request_id: PreviewRequestId,
         entry: FileEntry,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ModelPreviewStage {
+    Reading,
+    Thumbnail,
+    Rendering { triangles: usize },
+    Finishing,
+}
+
+impl ModelPreviewStage {
+    pub fn label(self) -> String {
+        match self {
+            Self::Reading => "Reading model…".into(),
+            Self::Thumbnail => "Reading thumbnail…".into(),
+            Self::Finishing => "Finishing preview…".into(),
+            Self::Rendering { triangles } => {
+                let count = if triangles >= 1_000_000 {
+                    format!("{:.1}M", triangles as f64 / 1_000_000.)
+                } else if triangles >= 1_000 {
+                    format!("{:.1}K", triangles as f64 / 1_000.)
+                } else {
+                    triangles.to_string()
+                };
+                format!("Rendering {count} triangles…")
+            }
+        }
+    }
 }
 
 pub trait PreviewProvider {

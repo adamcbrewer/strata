@@ -159,6 +159,7 @@ struct PreviewState {
     pending_show: RefCell<Option<glib::SourceId>>,
     load: RefCell<Option<LoadHandle>>,
     loading_delay: RefCell<Option<glib::SourceId>>,
+    loading_label: RefCell<Option<gtk::Label>>,
     pdf_loads: Rc<RefCell<HashMap<i32, LoadHandle>>>,
     print_load: RefCell<Option<LoadHandle>>,
     print_progress: RefCell<Option<PrintProgress>>,
@@ -339,6 +340,7 @@ impl PreviewDrawer {
             pending_show: RefCell::new(None),
             load: RefCell::new(None),
             loading_delay: RefCell::new(None),
+            loading_label: RefCell::new(None),
             pdf_loads: Rc::new(RefCell::new(HashMap::new())),
             print_load: RefCell::new(None),
             print_progress: RefCell::new(None),
@@ -997,7 +999,8 @@ impl PreviewState {
                 self.dismiss_print_progress();
                 show_print_error(parent.as_ref(), &message);
             }
-            PreviewEvent::Ready(_)
+            PreviewEvent::Progress { .. }
+            | PreviewEvent::Ready(_)
             | PreviewEvent::Failed { .. }
             | PreviewEvent::NeedsPassword { .. } => {}
         }
@@ -1131,6 +1134,7 @@ impl PreviewState {
 
     fn handle_event(self: &Rc<Self>, expected: PreviewRequestId, event: PreviewEvent) {
         let response = match &event {
+            PreviewEvent::Progress { request_id, .. } => *request_id,
             PreviewEvent::Ready(preview) => preview.request_id,
             PreviewEvent::Failed { request_id, .. } => *request_id,
             PreviewEvent::NeedsPassword { request_id, .. } => *request_id,
@@ -1139,6 +1143,11 @@ impl PreviewState {
             return;
         }
         match event {
+            PreviewEvent::Progress { stage, .. } => {
+                if let Some(label) = self.loading_label.borrow().as_ref() {
+                    label.set_text(&stage.label());
+                }
+            }
             PreviewEvent::Ready(preview) if preview.request_id == expected => {
                 self.cancel_loading();
                 self.render(preview);
@@ -1766,7 +1775,8 @@ impl PreviewState {
                     } if response_id == request_id => {
                         overlay.set_tooltip_text(Some("Unable to render this PDF page"));
                     }
-                    PreviewEvent::Ready(_)
+                    PreviewEvent::Progress { .. }
+                    | PreviewEvent::Ready(_)
                     | PreviewEvent::Failed { .. }
                     | PreviewEvent::NeedsPassword { .. } => return,
                 }
@@ -2167,6 +2177,17 @@ impl PreviewState {
         self.clear_content();
         self.cancel_loading();
         let weak = Rc::downgrade(self);
+        if self
+            .current
+            .borrow()
+            .as_ref()
+            .is_some_and(|entry| crate::services::is_model(&entry.native_name))
+        {
+            let label = gtk::Label::new(Some("Waiting for preview…"));
+            label.add_css_class("preview-feedback-detail");
+            label.set_wrap(true);
+            self.loading_label.replace(Some(label));
+        }
         let source = glib::timeout_add_local_once(PREVIEW_SPINNER_DELAY, move || {
             let Some(state) = weak.upgrade() else {
                 return;
@@ -2179,14 +2200,25 @@ impl PreviewState {
             spinner.add_css_class("preview-spinner");
             spinner.set_halign(gtk::Align::Center);
             spinner.set_valign(gtk::Align::Center);
-            spinner.set_vexpand(true);
             spinner.start();
-            state.content.append(&spinner);
+            if let Some(label) = state.loading_label.borrow().as_ref() {
+                let loading = gtk::Box::new(gtk::Orientation::Vertical, 12);
+                loading.set_halign(gtk::Align::Center);
+                loading.set_valign(gtk::Align::Center);
+                loading.set_vexpand(true);
+                loading.append(&spinner);
+                loading.append(label);
+                state.content.append(&loading);
+            } else {
+                spinner.set_vexpand(true);
+                state.content.append(&spinner);
+            }
         });
         self.loading_delay.replace(Some(source));
     }
 
     fn cancel_loading(&self) {
+        self.loading_label.borrow_mut().take();
         if let Some(source) = self.loading_delay.borrow_mut().take() {
             source.remove();
         }

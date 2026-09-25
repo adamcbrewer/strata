@@ -200,6 +200,7 @@ fn uri_images_stage_private_inputs_and_remove_them_after_rendering() {
                             assert_eq!(message, "decoder failure");
                         }
                         PreviewEvent::NeedsPassword { .. } => panic!("no password prompt expected"),
+                        PreviewEvent::Progress { .. } => panic!("no model progress expected"),
                     }
                     let path = staged_path
                         .lock()

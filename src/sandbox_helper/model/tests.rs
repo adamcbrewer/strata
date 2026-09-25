@@ -4,6 +4,36 @@ use super::*;
 use std::io::Write;
 
 #[test]
+fn model_progress_tracks_parsing_rendering_and_encoding_and_stops_on_failure() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let path = directory.path().join("progress.stl");
+    fs::write(&path, "solid sample\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid").expect("STL");
+    let stages = std::cell::RefCell::new(Vec::new());
+    let png = render_reporting(&path, "200x200:00ff00:101010", &|stage| {
+        stages.borrow_mut().push(stage)
+    })
+    .expect("model render");
+    assert!(Pixmap::decode_png(&png).is_ok());
+    assert_eq!(
+        *stages.borrow(),
+        vec![
+            ModelPreviewStage::Reading,
+            ModelPreviewStage::Rendering { triangles: 1 },
+            ModelPreviewStage::Finishing
+        ]
+    );
+    stages.borrow_mut().clear();
+    fs::write(&path, b"not an STL").expect("invalid model");
+    assert!(
+        render_reporting(&path, "200x200:00ff00:101010", &|stage| stages
+            .borrow_mut()
+            .push(stage))
+        .is_err()
+    );
+    assert_eq!(*stages.borrow(), vec![ModelPreviewStage::Reading]);
+}
+
+#[test]
 fn large_binary_stl_is_accepted_and_over_limit_reports_triangles() {
     for (count, accepted) in [(1_620_000u32, true), (2_000_001, false)] {
         let mut bytes = vec![0; 84 + count as usize * 50];
@@ -105,7 +135,102 @@ fn cyclic_components_are_bounded() {
 }
 
 #[test]
-fn embedded_thumbnail_is_preferred_and_invalid_thumbnail_falls_back_to_theme_render() {
+fn multipart_packages_show_one_thumbnail_or_explain_why_rendering_is_unavailable() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let path = directory.path().join("assembly.3mf");
+    for thumbnail_count in [0, 1, 2] {
+        let mut package = zip::ZipWriter::new(fs::File::create(&path).expect("package"));
+        let options = zip::write::SimpleFileOptions::default();
+        for part in ["3D/Objects/part.model", "3D/3dmodel.model"] {
+            package.start_file(part, options).expect("model part");
+            package
+                .write_all(b"must not parse partial geometry")
+                .expect("model content");
+        }
+        for index in 0..thumbnail_count {
+            package
+                .start_file(format!("Metadata/{index}-thumbnail.png"), options)
+                .expect("thumbnail part");
+            let mut thumbnail = Pixmap::new(8, 8).expect("pixmap");
+            thumbnail.fill(Color::from_rgba8(255, 0, 0, 255));
+            package
+                .write_all(&thumbnail.encode_png().expect("PNG"))
+                .expect("thumbnail");
+        }
+        package.finish().expect("finished package");
+        let result = render(&path, "200x200:00ff00:101010");
+        if thumbnail_count == 1 {
+            assert_eq!(
+                Pixmap::decode_png(&result.expect("thumbnail"))
+                    .expect("PNG")
+                    .pixel(0, 0)
+                    .expect("pixel")
+                    .red(),
+                255
+            );
+        } else {
+            assert_eq!(
+                result.expect_err("multipart rendering unavailable"),
+                "Multipart model detected. Unable to render preview."
+            );
+        }
+    }
+}
+
+#[test]
+fn cross_part_components_report_multipart_even_when_the_referenced_part_is_missing() {
+    let xml = br#"<model><resources><object id="1"><components><component objectid="1" path="/3D/Objects/part.model"/></components></object></resources><build><item objectid="1"/></build></model>"#;
+    assert_eq!(
+        triangles_3mf(xml).expect_err("cross-part component"),
+        "Multipart model detected. Unable to render preview."
+    );
+}
+
+#[test]
+fn root_relationship_selects_a_nonstandard_model_part_and_named_thumbnail() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let path = directory.path().join("related.3mf");
+    let mut package = zip::ZipWriter::new(fs::File::create(&path).expect("package"));
+    let options = zip::write::SimpleFileOptions::default();
+    package
+        .start_file("_rels/.rels", options)
+        .expect("relationships");
+    package.write_all(br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="model" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" Target="/Models/root.model"/><Relationship Id="thumbnail" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail" Target="/Metadata/preview.png"/></Relationships>"#).expect("relationships");
+    package
+        .start_file("Models/root.model", options)
+        .expect("root model");
+    package.write_all(br#"<model><resources><object id="1"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object></resources><build><item objectid="1"/></build></model>"#).expect("model");
+    package.finish().expect("package complete");
+    let rendered = render(&path, "200x200:00ff00:101010").expect("root selected from relationship");
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .expect("package");
+    let mut package = zip::ZipWriter::new_append(file).expect("append thumbnail");
+    package
+        .start_file("Metadata/preview.png", options)
+        .expect("thumbnail");
+    let mut thumbnail = Pixmap::new(8, 8).expect("pixmap");
+    thumbnail.fill(Color::from_rgba8(255, 0, 0, 255));
+    package
+        .write_all(&thumbnail.encode_png().expect("PNG"))
+        .expect("thumbnail");
+    package.finish().expect("package complete");
+    let embedded = render(&path, "200x200:00ff00:101010").expect("named thumbnail");
+    assert_ne!(rendered, embedded);
+    assert_eq!(
+        Pixmap::decode_png(&embedded)
+            .expect("PNG")
+            .pixel(0, 0)
+            .expect("pixel")
+            .red(),
+        255
+    );
+}
+
+#[test]
+fn single_thumbnail_is_preferred_and_multiple_or_invalid_thumbnails_render_the_model() {
     let directory = tempfile::tempdir().expect("fixture directory");
     let path = directory.path().join("sample.3mf");
     let file = fs::File::create(&path).expect("package");
@@ -137,14 +262,14 @@ fn embedded_thumbnail_is_preferred_and_invalid_thumbnail_falls_back_to_theme_ren
         .open(&path)
         .expect("package");
     let mut zip = zip::ZipWriter::new_append(file).expect("append to package");
-    zip.start_file("Metadata/broken-thumbnail.png", options)
-        .expect("broken thumbnail part");
-    zip.write_all(b"not an image").expect("broken thumbnail");
+    zip.start_file("Metadata/other-thumbnail.png", options)
+        .expect("second thumbnail part");
+    zip.write_all(&thumbnail.encode_png().expect("second PNG"))
+        .expect("second thumbnail");
     zip.finish().expect("package complete");
-    assert_eq!(
-        render(&path, "200x200:00ff00:101010").expect("valid thumbnail still preferred"),
-        embedded
-    );
+    let multiple =
+        render(&path, "200x200:00ff00:101010").expect("multiple thumbnails use geometry");
+    assert_ne!(multiple, embedded);
     let mut package = zip::ZipArchive::new(fs::File::open(&path).expect("package")).expect("ZIP");
     let mut model = Vec::new();
     package
@@ -162,6 +287,7 @@ fn embedded_thumbnail_is_preferred_and_invalid_thumbnail_falls_back_to_theme_ren
     zip.write_all(b"not an image").expect("invalid thumbnail");
     zip.finish().expect("package complete");
     let shaded = render(&path, "200x200:00ff00:101010").expect("rendered model");
+    assert_eq!(multiple, shaded);
     assert_ne!(embedded, shaded);
     let recolored = render(&path, "200x200:0000ff:101010").expect("recolored model");
     assert_ne!(shaded, recolored);

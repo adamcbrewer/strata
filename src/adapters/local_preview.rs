@@ -189,7 +189,36 @@ impl LocalPreviewProvider {
 
 impl PreviewProvider for LocalPreviewProvider {
     fn load(&self, request: PreviewRequest, emit: Rc<dyn Fn(PreviewEvent)>) -> LoadHandle {
-        self.load_with_renderer(request, emit, crate::sandbox::parse)
+        use futures_lite::StreamExt;
+        let (send, mut receive) = futures_channel::mpsc::channel(8);
+        let send = RefCell::new(send);
+        let request_id = request.id;
+        let progress_emit = emit.clone();
+        let progress_task = glib::MainContext::default().spawn_local(async move {
+            while let Some(stage) = receive.next().await {
+                progress_emit(PreviewEvent::Progress { request_id, stage });
+            }
+        });
+        let load = self.load_with_renderer(
+            request,
+            emit,
+            move |path, operation, value, backend, cancellation| {
+                crate::sandbox::parse_with_progress(
+                    path,
+                    operation,
+                    value,
+                    backend,
+                    cancellation,
+                    &|stage| {
+                        let _ = send.borrow_mut().try_send(stage);
+                    },
+                )
+            },
+        );
+        LoadHandle::new(move || {
+            drop(load);
+            progress_task.abort();
+        })
     }
 }
 

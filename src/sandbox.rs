@@ -252,8 +252,33 @@ pub(crate) fn parse(
     media_backend: MediaPreviewBackend,
     cancellation: &Cancellation,
 ) -> Result<ParseOutput, String> {
+    parse_with_progress(
+        input,
+        operation,
+        value,
+        media_backend,
+        cancellation,
+        &|_| {},
+    )
+}
+
+pub(crate) fn parse_with_progress(
+    input: &Path,
+    operation: ParseOperation,
+    value: i32,
+    media_backend: MediaPreviewBackend,
+    cancellation: &Cancellation,
+    progress: &dyn Fn(crate::services::ModelPreviewStage),
+) -> Result<ParseOutput, String> {
     let archive = matches!(operation, ParseOperation::ArchiveList { .. });
-    let result = parse_sandboxed(input, operation, value, media_backend, cancellation);
+    let result = parse_sandboxed(
+        input,
+        operation,
+        value,
+        media_backend,
+        cancellation,
+        progress,
+    );
     match result {
         Err(error)
             if archive && !cancellation.is_cancelled() && !is_archive_contract_message(&error) =>
@@ -276,6 +301,7 @@ fn parse_sandboxed(
     value: i32,
     media_backend: MediaPreviewBackend,
     cancellation: &Cancellation,
+    progress: &dyn Fn(crate::services::ModelPreviewStage),
 ) -> Result<ParseOutput, String> {
     if cancellation.is_cancelled() {
         return Err("Preview cancelled".to_owned());
@@ -357,7 +383,20 @@ fn parse_sandboxed(
     } else {
         WALL_TIME_LIMIT
     };
-    let status = wait_for_renderer(&mut child, cancellation, timeout)?;
+    let mut previous = None;
+    let mut poll_progress = || {
+        if matches!(operation, ParseOperation::PreviewModel(_))
+            && let Ok(bytes) = read_private_output(&output.path().join("result.progress"), 128)
+            && let Ok(stage) = serde_json::from_slice::<crate::services::ModelPreviewStage>(&bytes)
+            && !matches!(stage, crate::services::ModelPreviewStage::Rendering { triangles } if triangles > 2_000_000)
+            && previous != Some(stage)
+        {
+            previous = Some(stage);
+            progress(stage);
+        }
+    };
+    let status =
+        wait_for_renderer_reporting(&mut child, cancellation, timeout, &mut poll_progress)?;
     if !status.success() {
         if matches!(operation, ParseOperation::PreviewModel(_))
             && let Ok(data) = read_private_output(&output.path().join("result.error"), 512)
@@ -465,6 +504,15 @@ fn wait_for_renderer(
     cancellation: &Cancellation,
     wall_time_limit: Duration,
 ) -> Result<ExitStatus, String> {
+    wait_for_renderer_reporting(child, cancellation, wall_time_limit, &mut || {})
+}
+
+fn wait_for_renderer_reporting(
+    child: &mut Child,
+    cancellation: &Cancellation,
+    wall_time_limit: Duration,
+    progress: &mut dyn FnMut(),
+) -> Result<ExitStatus, String> {
     let started = Instant::now();
     let deadline = started + wall_time_limit;
     let pidfd = child_pidfd(child);
@@ -477,6 +525,7 @@ fn wait_for_renderer(
             terminate(child);
             return Err("The preview renderer timed out".to_owned());
         }
+        progress();
         match child.try_wait() {
             Ok(Some(status)) => return Ok(status),
             Ok(None) => wait_step(pidfd.as_ref(), deadline),
