@@ -697,6 +697,40 @@ fn produces_script_reported_output_and_messages() {
 }
 
 #[test]
+fn live_output_is_visible_during_a_run_and_retained_after_completion() {
+    let runner = FakeRunner::new(Behavior::HeldForCancel);
+    let service = JobService::new(runner.clone());
+    let id = service
+        .enqueue(request(
+            handle(
+                "a1",
+                "Convert",
+                ExecutionMode::WholeSelection,
+                ErrorPolicy::Continue,
+                "bash",
+            ),
+            &["/tmp/a.png"],
+        ))
+        .expect("job queues");
+    service.pump();
+    runner.pending.borrow()[0](ActionRunEvent::LogTail("halfway\n".to_owned()));
+    service.pump();
+    let running = service.snapshot_of(id).expect("running job");
+    assert_eq!(running.status, JobStatus::Running);
+    assert_eq!(running.log, "halfway\n");
+
+    runner.pending.borrow_mut().pop().expect("runner sink")(ActionRunEvent::Exited {
+        code: Some(0),
+        signal: None,
+        log: "halfway\nheld\n".to_owned(),
+    });
+    service.pump();
+    let finished = service.snapshot_of(id).expect("finished job");
+    assert_eq!(finished.status, JobStatus::Succeeded);
+    assert_eq!(finished.log, "halfway\nheld\n");
+}
+
+#[test]
 fn progress_fractions_are_honest_about_unknown_totals() {
     let mut progress = JobProgress {
         total_items: 4,
