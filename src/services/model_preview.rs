@@ -7,6 +7,12 @@ use super::MediaPreviewSize;
 // Input and geometry limits are independent; neither is a resident-memory budget.
 pub(crate) const MAX_MODEL_INPUT_BYTES: u64 = 128 * 1024 * 1024;
 pub(crate) const MAX_MODEL_XML_BYTES: u64 = 128 * 1024 * 1024;
+pub(crate) const MAX_3MF_ARCHIVE_ENTRIES: usize = 256;
+pub(crate) const MAX_FREECAD_ARCHIVE_ENTRIES: usize = 4096;
+pub(crate) const MAX_3MF_OBJECTS: usize = 1024;
+pub(crate) const MAX_3MF_BUILD_ITEMS: usize = 1024;
+pub(crate) const MAX_3MF_COMPONENT_DEPTH: usize = 16;
+pub(crate) const MAX_3MF_RELATIONSHIPS_BYTES: u64 = 64 * 1024;
 pub(crate) const MAX_MODEL_TRIANGLES: usize = 2_000_000;
 pub(crate) const MAX_MODEL_VERTICES: usize = 2_000_000;
 pub(crate) const MAX_MODEL_COMPONENT_REFERENCES: usize = 100_000;

@@ -289,6 +289,21 @@ fn unsupported_and_oversized_remote_inputs_fail_before_transfer_or_render() {
             for (name, size, message) in [
                 ("remote.pdf", MetadataValue::Unknown, "Remote PDF previews"),
                 (
+                    "remote.stl",
+                    MetadataValue::Unknown,
+                    "Remote model previews are not supported; copy the file locally first",
+                ),
+                (
+                    "remote.3mf",
+                    MetadataValue::Unknown,
+                    "Remote model previews are not supported; copy the file locally first",
+                ),
+                (
+                    "remote.FCStd",
+                    MetadataValue::Unknown,
+                    "Remote model previews are not supported; copy the file locally first",
+                ),
+                (
                     "photo.jpg",
                     MetadataValue::Known(65 * 1024 * 1024),
                     "64 MiB",

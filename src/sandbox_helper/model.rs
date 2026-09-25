@@ -111,7 +111,9 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
             Event::Start(tag) | Event::Empty(tag) => match tag.local_name().as_ref() {
                 b"object" => {
                     let id = index(&tag, b"id")?;
-                    if objects.len() >= 1024 || objects.insert(id, Object::default()).is_some() {
+                    if objects.len() >= MAX_3MF_OBJECTS
+                        || objects.insert(id, Object::default()).is_some()
+                    {
                         return Err("3MF object limit exceeded".into());
                     }
                     current = Some(id);
@@ -171,7 +173,7 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
                     if attribute(&tag, b"path")?.is_some() {
                         return Err(MULTIPART_MODEL_MESSAGE.into());
                     }
-                    if items.len() >= 1024 {
+                    if items.len() >= MAX_3MF_BUILD_ITEMS {
                         return Err("3MF build item limit exceeded".into());
                     }
                     items.push((
@@ -194,7 +196,7 @@ fn triangles_3mf(xml: &[u8]) -> Result<Vec<[Point; 3]>, String> {
         if expanded > MAX_MODEL_COMPONENT_EXPANSIONS {
             return Err("3MF component expansion limit exceeded".into());
         }
-        if depth > 16 {
+        if depth > MAX_3MF_COMPONENT_DEPTH {
             return Err("3MF component nesting limit exceeded".into());
         }
         let object = objects.get(&id).ok_or("3MF references a missing object")?;
@@ -449,11 +451,14 @@ fn package_relationships(
         Err(_) => return Err("Unable to read 3MF package relationships".into()),
     };
     let mut xml = Vec::new();
-    file.take(64 * 1024 + 1)
+    file.take(MAX_3MF_RELATIONSHIPS_BYTES + 1)
         .read_to_end(&mut xml)
         .map_err(|_| "Invalid 3MF package relationships")?;
-    if xml.len() > 64 * 1024 {
-        return Err("3MF package relationships exceed the 64 KiB preview limit".into());
+    if xml.len() as u64 > MAX_3MF_RELATIONSHIPS_BYTES {
+        return Err(format!(
+            "3MF package relationships exceed the {} KiB preview limit",
+            MAX_3MF_RELATIONSHIPS_BYTES / 1024
+        ));
     }
     let mut reader = Reader::from_reader(xml.as_slice());
     let mut model = None;

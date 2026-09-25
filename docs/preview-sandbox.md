@@ -55,15 +55,34 @@ helper exits. Format is carried explicitly across the sandbox boundary, includin
 for symlinks; the UI supplies the render palette. Geometry PNG cache keys include
 format, size and palette, and open model previews reload on palette changes.
 
-Limits are centralized in `src/services/model_preview.rs`:
+Input, package and geometry limits are centralized in
+`src/services/model_preview.rs`. These are compile-time constants, not Settings
+options or environment variables:
 
-- Input file: **128 MiB** (134,217,728 bytes).
-- Unpacked 3MF model XML: separately **128 MiB**.
-- Geometry: **2 million triangles**, **2 million vertices**.
-- Components: **100,000 stored references** and **100,000 expanded objects**;
-  admission checks precede expansion-stack allocation.
-- Raster work: **100 million triangle bounding-box pixel visits**, with an
-  output of at most **800×800** pixels.
+| Constant | Limit | Applies to |
+| --- | --- | --- |
+| `MAX_MODEL_INPUT_BYTES` | 128 MiB (134,217,728 bytes) | Input file, including embedded-thumbnail requests |
+| `MAX_MODEL_XML_BYTES` | 128 MiB, independently of compressed file size | Unpacked 3MF model XML |
+| `MAX_3MF_ARCHIVE_ENTRIES` | 256 | All ZIP entries in a 3MF package |
+| `MAX_FREECAD_ARCHIVE_ENTRIES` | 4096 | All ZIP entries in a FreeCAD package |
+| `MAX_3MF_OBJECTS` | 1024 | Objects in the 3MF model XML |
+| `MAX_3MF_BUILD_ITEMS` | 1024 | Build items in the 3MF model XML |
+| `MAX_3MF_COMPONENT_DEPTH` | 16 | Component nesting below a build item (depth zero) |
+| `MAX_3MF_RELATIONSHIPS_BYTES` | 64 KiB | Unpacked `_rels/.rels` in a 3MF package |
+| `MAX_MODEL_TRIANGLES` | 2 million | Parsed/emitted triangles |
+| `MAX_MODEL_VERTICES` | 2 million | 3MF vertices |
+| `MAX_MODEL_COMPONENT_REFERENCES` | 100,000 | Stored component references |
+| `MAX_MODEL_COMPONENT_EXPANSIONS` | 100,000 | Expanded objects, including pending expansion work |
+| `MAX_MODEL_RASTER_WORK` | 100 million | Triangle bounding-box pixel visits |
+
+Package entry caps are checked **before looking for an embedded thumbnail**. A
+package exceeding its entry cap is rejected even if it contains a usable PNG:
+Quick Preview reports “Model package entry limit exceeded” and the browser keeps
+the normal file icon. The `_rels/.rels` byte limit also applies before thumbnail
+selection in 3MF packages. Object, build-item and component limits apply when
+geometry is parsed, not when a usable embedded image is selected. Component
+admission checks precede expansion-stack allocation. Render output is at most
+800×800 pixels.
 
 **These input-size limits are not RAM limits.** Input, parsed geometry and codec
 allocations consume additional memory. Rendering releases source bytes first and

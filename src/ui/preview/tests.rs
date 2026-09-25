@@ -67,9 +67,9 @@ fn model_progress_and_theme_reloads_follow_the_current_request_in_each_drawer() 
                 .as_ref()
                 .expect("loading feedback")
                 .clone();
-            let current_text = label.text();
+            assert_eq!(label.text(), "Rendering 23 triangles…");
             emit_progress(0, crate::services::ModelPreviewStage::Finishing);
-            assert_eq!(label.text(), current_text);
+            assert_eq!(label.text(), "Rendering 23 triangles…");
             {
                 let pending = provider.0.borrow();
                 (pending[0].emit)(PreviewEvent::Failed {

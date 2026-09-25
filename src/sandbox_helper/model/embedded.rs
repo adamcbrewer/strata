@@ -4,7 +4,10 @@ use std::{fs, io::Read, path::Path};
 
 use resvg::tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
-use crate::services::{ModelFormat, ModelPreviewStage};
+use crate::services::{
+    ModelFormat, ModelPreviewStage,
+    model_preview::{MAX_3MF_ARCHIVE_ENTRIES, MAX_FREECAD_ARCHIVE_ENTRIES},
+};
 
 const MAX_THUMBNAIL_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_THUMBNAIL_CANDIDATES: usize = 16;
@@ -28,8 +31,8 @@ impl Package {
         }
         let mut archive = zip::ZipArchive::new(file).map_err(|_| "Invalid model package")?;
         let entry_limit = match format {
-            ModelFormat::ThreeMf => 256,
-            ModelFormat::FreeCad => 4096,
+            ModelFormat::ThreeMf => MAX_3MF_ARCHIVE_ENTRIES,
+            ModelFormat::FreeCad => MAX_FREECAD_ARCHIVE_ENTRIES,
             ModelFormat::Stl => return Err("STL has no embedded thumbnail".into()),
         };
         if archive.len() > entry_limit {

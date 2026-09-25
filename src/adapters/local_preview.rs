@@ -526,9 +526,11 @@ impl LocalPreviewProvider {
                         emit(PreviewEvent::Failed {
                             request_id,
                             entry,
-                            message:
+                            message: if matches!(operation, ParseOperation::PreviewModel(_)) {
+                                "Remote model previews are not supported; copy the file locally first"
+                            } else {
                                 "Remote PDF previews are not supported; copy the file locally first"
-                                    .into(),
+                            }.into(),
                         });
                         return;
                     }
