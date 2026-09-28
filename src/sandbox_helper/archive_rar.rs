@@ -325,7 +325,7 @@ pub(super) fn cover_image(path: &Path) -> Result<Vec<u8>, String> {
                 handle = native::RAROpenArchiveEx(&raw mut data);
             }
             data.open_result as i32
-        })?;
+        });
         let archive = (!handle.is_null()).then_some(Archive(handle));
         if let Some(archive) = &archive {
             // SAFETY: The handle is live; remove the expired callback state.
@@ -333,7 +333,7 @@ pub(super) fn cover_image(path: &Path) -> Result<Vec<u8>, String> {
                 native::RARSetCallback(archive.0, None, 0);
             }
         }
-        decode_result(opened, None)?;
+        decode_result(opened?, None)?;
         let archive = archive.ok_or("Unable to open RAR archive")?;
         let mut complete = false;
         for _ in 0..MAX_ENTRIES {
