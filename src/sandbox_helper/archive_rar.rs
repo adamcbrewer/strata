@@ -338,15 +338,7 @@ pub(super) fn cover_image(path: &Path) -> Result<Vec<u8>, String> {
         let mut complete = false;
         for _ in 0..MAX_ENTRIES {
             let mut header = native::HeaderDataEx::default();
-            let code = call(None, None, |user| {
-                // SAFETY: The handle, header and callback state are live for this call.
-                unsafe {
-                    native::RARSetCallback(archive.0, Some(callback), user);
-                    let code = native::RARReadHeaderEx(archive.0, &raw mut header);
-                    native::RARSetCallback(archive.0, None, 0);
-                    code
-                }
-            })?;
+            let code = read_cover_header(&archive, &mut header)?;
             if code == native::ERAR_END_ARCHIVE {
                 if scanning {
                     complete = true;
@@ -387,9 +379,10 @@ pub(super) fn cover_image(path: &Path) -> Result<Vec<u8>, String> {
                 }),
                 |user| {
                     // SAFETY: The handle and callback state remain live throughout this call.
-                    unsafe {
-                        native::RARSetCallback(archive.0, Some(callback), user);
-                        let code = native::RARProcessFile(
+                    unsafe { native::RARSetCallback(archive.0, Some(callback), user) };
+                    // SAFETY: The handle and callback state remain live until processing returns.
+                    let code = unsafe {
+                        native::RARProcessFile(
                             archive.0,
                             if chosen {
                                 native::RAR_TEST
@@ -398,10 +391,11 @@ pub(super) fn cover_image(path: &Path) -> Result<Vec<u8>, String> {
                             },
                             ptr::null(),
                             ptr::null(),
-                        );
-                        native::RARSetCallback(archive.0, None, 0);
-                        code
-                    }
+                        )
+                    };
+                    // SAFETY: The handle is live; clear the callback before its state expires.
+                    unsafe { native::RARSetCallback(archive.0, None, 0) };
+                    code
                 },
             )?;
             decode_result(code, None)?;
@@ -418,19 +412,23 @@ pub(super) fn cover_image(path: &Path) -> Result<Vec<u8>, String> {
         if scanning && !complete {
             // A bounded scan may stop before the end; reject rather than choose a partial listing.
             let mut header = native::HeaderDataEx::default();
-            let code = call(None, None, |user| {
-                // SAFETY: The live handle and callback state are valid for this call.
-                unsafe {
-                    native::RARSetCallback(archive.0, Some(callback), user);
-                    let code = native::RARReadHeaderEx(archive.0, &raw mut header);
-                    native::RARSetCallback(archive.0, None, 0);
-                    code
-                }
-            })?;
+            let code = read_cover_header(&archive, &mut header)?;
             if code != native::ERAR_END_ARCHIVE {
                 return Err("Comic archive entry limit exceeded".into());
             }
         }
     }
     Err("Comic cover is missing".into())
+}
+
+fn read_cover_header(archive: &Archive, header: &mut native::HeaderDataEx) -> Result<i32, String> {
+    call(None, None, |user| {
+        // SAFETY: The handle, header and callback state remain live for this call.
+        unsafe { native::RARSetCallback(archive.0, Some(callback), user) };
+        // SAFETY: The handle and exclusive header remain live until this read returns.
+        let code = unsafe { native::RARReadHeaderEx(archive.0, header) };
+        // SAFETY: The handle is live; clear the callback before its state expires.
+        unsafe { native::RARSetCallback(archive.0, None, 0) };
+        code
+    })
 }

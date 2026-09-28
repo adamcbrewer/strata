@@ -84,19 +84,21 @@ pub(crate) fn render(input: &Path, format: CoverFormat, edge: i32) -> Result<Vec
                 return Err("Cover archive entry limit exceeded".into());
             }
             let name = if format == CoverFormat::Cbz {
-                let mut names = Vec::new();
+                let mut first = None::<String>;
                 for i in 0..archive.len() {
                     let file = archive
                         .by_index_raw(i)
                         .map_err(|_| "Invalid cover archive")?;
-                    if !file.is_dir() && image_name(file.name()) {
-                        names.push(file.name().to_owned());
+                    if !file.is_dir()
+                        && image_name(file.name())
+                        && first
+                            .as_deref()
+                            .is_none_or(|name| compare_names(file.name(), name).is_lt())
+                    {
+                        first = Some(file.name().to_owned());
                     }
                 }
-                names
-                    .into_iter()
-                    .min_by(|a, b| compare_names(a, b))
-                    .ok_or("Comic archive has no bounded image")?
+                first.ok_or("Comic archive has no bounded image")?
             } else {
                 epub_cover(&mut archive)?
             };

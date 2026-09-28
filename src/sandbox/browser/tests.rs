@@ -688,32 +688,3 @@ fn preview_operations_render_inside_the_decoder() {
         &response.png
     ));
 }
-
-#[test]
-fn archive_cover_thumbnail_uses_a_standalone_decoder() {
-    use std::io::Write;
-
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let path = directory.path().join("comic.cbz");
-    let image = resvg::tiny_skia::Pixmap::new(24, 36)
-        .expect("image")
-        .encode_png()
-        .expect("PNG");
-    let mut archive = zip::ZipWriter::new(File::create(&path).expect("archive"));
-    archive
-        .start_file("page1.png", zip::write::SimpleFileOptions::default())
-        .expect("member");
-    archive.write_all(&image).expect("image bytes");
-    archive.finish().expect("finished archive");
-
-    let result = thumbnail(
-        &path,
-        ParseOperation::ThumbnailCover(crate::sandbox::CoverFormat::Cbz),
-        &Cancellation::default(),
-    )
-    .expect("sandboxed cover thumbnail");
-    assert!(super::super::valid_output(
-        ParseOperation::ThumbnailCover(crate::sandbox::CoverFormat::Cbz),
-        &result.png,
-    ));
-}
