@@ -52,6 +52,7 @@ impl ViewState {
         match event {
             BrowserEvent::SelectionSynced { .. } => return,
             BrowserEvent::NavigationStarting => {
+                self.forget_listing_search();
                 self.suppress_scroll_after_drop.set(false);
                 self.drop_active_depths.set(None);
             }
@@ -259,14 +260,19 @@ impl ViewState {
                     }
                     column.entry_count.set(count);
                     set_filter_placeholder(column, count);
-                    let positions: Vec<_> = self
-                        .browser
-                        .selected_positions(*depth)
-                        .into_iter()
-                        .filter_map(|position| column.map.view_position(position))
-                        .collect();
-                    set_column_selections(column, &positions);
+                    // Recursive hits keep their own selection and cursor.
+                    let hits = column.recursive_search_active.get();
+                    if !hits {
+                        let positions: Vec<_> = self
+                            .browser
+                            .selected_positions(*depth)
+                            .into_iter()
+                            .filter_map(|position| column.map.view_position(position))
+                            .collect();
+                        set_column_selections(column, &positions);
+                    }
                     if restore_cursor
+                        && !hits
                         && let Some((focused_depth, position, _)) = self.browser.focused_item()
                         && focused_depth == *depth
                         && let Some(position) = column.map.view_position(position)
@@ -301,8 +307,9 @@ impl ViewState {
                         *depth,
                         &column.sort_direction_button,
                     );
-                    let preserve_search =
-                        self.refreshing_source_filter.get() && column.recursive_search_active.get();
+                    // Filters and searches outlive the monitor rescans of a busy
+                    // folder. Their hits come from the search, not this listing.
+                    let preserve_search = column.recursive_search_active.get();
                     if !preserve_search {
                         column.search_session.cancel();
                         super::collection::deactivate_recursive_search(
@@ -312,7 +319,6 @@ impl ViewState {
                             &column.filtered_model,
                             &column.model,
                         );
-                        column.filter_entry.set_text("");
                         column.syncing_selection.set(true);
                         column.selection.set_model(None::<&gio::ListModel>);
                     }
@@ -551,8 +557,10 @@ impl ViewState {
                 let column = self.columns.borrow().get(*depth).cloned();
                 if let Some(column) = column {
                     let editing = self.active_rename.borrow().is_some();
-                    if let Some(filtered_position) =
-                        position.and_then(|position| column.map.view_position(position))
+                    // Recursive hits keep their own selection and cursor.
+                    if let Some(filtered_position) = position
+                        .filter(|_| !column.recursive_search_active.get())
+                        .and_then(|position| column.map.view_position(position))
                     {
                         let positions: Vec<_> = self
                             .browser
@@ -567,6 +575,7 @@ impl ViewState {
                         }
                     }
                     if !editing
+                        && !self.cursor_keeps_focus.get()
                         && self.mode_views.borrow().mode() == BrowserMode::Columns
                         && self.browser.active_depth() == Some(*depth)
                         && !self.suppress_scroll_after_drop.get()

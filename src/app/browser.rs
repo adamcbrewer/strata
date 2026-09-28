@@ -853,7 +853,18 @@ impl Browser {
         self.operation_provider.replace(Some(provider));
     }
 
+    #[cfg(test)]
     pub fn navigate_input(self: &Rc<Self>, input: &str) -> Result<(), LocationValidationError> {
+        self.navigate_input_from(input, None)
+    }
+
+    /// Like [`Self::navigate_input`], but a relative path resolves against the
+    /// native folder `base`. URIs and `~` paths are unaffected.
+    pub fn navigate_input_from(
+        self: &Rc<Self>,
+        input: &str,
+        base: Option<&Path>,
+    ) -> Result<(), LocationValidationError> {
         let input = input.trim();
         if input.is_empty() {
             return Err(LocationValidationError::Empty);
@@ -871,7 +882,10 @@ impl Browser {
             self.navigate_validated(current, true);
             return Ok(());
         }
-        let location = location_from_input(input)?;
+        let location = match base.filter(|_| is_relative_path_input(input)) {
+            Some(base) => Location::local(join_relative(base, input)),
+            None => location_from_input(input)?,
+        };
         if location.native_path().is_some() && !location.is_absolute_native() {
             return Err(LocationValidationError::NotAbsolute);
         }
@@ -1739,6 +1753,14 @@ impl Browser {
         Some(read(entries.get(range)?))
     }
 
+    pub(crate) fn folder_names(
+        &self,
+        depth: usize,
+        include_hidden: bool,
+    ) -> Vec<std::ffi::OsString> {
+        self.state.borrow().folder_names(depth, include_hidden)
+    }
+
     pub fn column_preferences(&self, depth: usize) -> Option<ViewPreferences> {
         self.state.borrow().column_preferences(depth)
     }
@@ -1798,6 +1820,10 @@ impl Browser {
 
     pub fn selected_entries(&self) -> Vec<FileEntry> {
         self.state.borrow().selected_entries()
+    }
+
+    pub fn command_entries(&self, depth: usize) -> Vec<FileEntry> {
+        self.state.borrow().command_entries(depth)
     }
 
     pub fn selection_is_load_cursor(&self) -> bool {
@@ -2007,6 +2033,14 @@ impl Browser {
             self.operation_callback(request_id, false, HashSet::from([refresh_parent])),
         );
         self.install_operation_load(request_id, load);
+    }
+
+    pub fn create_exact_entry(self: &Rc<Self>, parent: Location, name: String, directory: bool) {
+        if directory {
+            self.create_directory_with_naming(parent, name, false);
+        } else {
+            self.create_file_with_naming(parent, name, false);
+        }
     }
 
     pub fn create_new_file(self: &Rc<Self>, parent: Location) {
@@ -2844,6 +2878,21 @@ impl Browser {
             self.emit(BrowserEvent::FocusChanged {
                 depth,
                 position: Some(position),
+            });
+        }
+    }
+
+    pub fn extend_page_selection(&self, direction: i32, page: usize, order: Option<&[usize]>) {
+        let extended = self
+            .state
+            .borrow_mut()
+            .extend_page_selection(direction, page, order);
+        if let Some((depth, focused, positions)) = extended {
+            self.emit(BrowserEvent::SelectionSetChanged {
+                depth,
+                positions,
+                focused,
+                take_focus: true,
             });
         }
     }
@@ -3843,6 +3892,26 @@ fn looks_like_scp_shorthand(input: &str) -> bool {
         return false;
     };
     !host.is_empty() && after_at.contains(':') && !host.contains('/') && !host.contains('\\')
+}
+
+/// Joins natively, so a non-UTF-8 base stays byte-exact, and resolves `.` and
+/// `..` lexically like a shell's `cd`.
+fn join_relative(base: &Path, relative: &str) -> PathBuf {
+    let mut path = base.to_path_buf();
+    for component in Path::new(relative).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                path.pop();
+            }
+            std::path::Component::Normal(name) => path.push(name),
+            _ => {}
+        }
+    }
+    path
+}
+
+fn is_relative_path_input(input: &str) -> bool {
+    !input.starts_with(['/', '~']) && !is_uri_like(input)
 }
 
 fn is_uri_like(input: &str) -> bool {

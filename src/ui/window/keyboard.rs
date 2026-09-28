@@ -13,18 +13,25 @@ use gtk::{
 
 use crate::{
     app::Browser,
+    services::NavigationHistory,
     ui::{
-        browser::BrowserView, preview::PreviewDrawer, shortcut_footer::ShortcutFooter,
+        browser::BrowserView,
+        go_completion::{FolderSource, GoCompletion},
+        preview::PreviewDrawer,
+        shortcut_footer::ShortcutFooter,
         top_bar_navigation::TopBarNavigation,
     },
 };
 
 use super::{SidebarState, SidebarView, TypeToSearch, visible_modal_layer};
 
+pub(super) mod chords;
 mod commands;
+mod files;
 mod focus;
 mod items;
 mod preview;
+mod prompts;
 mod sidebar;
 
 pub(in crate::ui) use sidebar::{
@@ -40,6 +47,8 @@ pub(super) struct Bindings {
     pub preview: PreviewDrawer,
     pub type_to_search: TypeToSearch,
     pub shortcuts: ShortcutFooter,
+    pub folders: Rc<dyn FolderSource>,
+    pub history: Rc<NavigationHistory>,
 }
 
 pub(super) fn install(window: &gtk::ApplicationWindow, sidebar: &SidebarView, bindings: Bindings) {
@@ -53,6 +62,8 @@ pub(super) fn install(window: &gtk::ApplicationWindow, sidebar: &SidebarView, bi
         preview: bindings.preview,
         type_to_search: bindings.type_to_search,
         shortcuts: bindings.shortcuts,
+        go: GoCompletion::new(bindings.folders),
+        history: bindings.history,
         sidebar: SidebarFocus {
             state: sidebar.state.clone(),
             widget: sidebar.widget.clone(),
@@ -60,8 +71,26 @@ pub(super) fn install(window: &gtk::ApplicationWindow, sidebar: &SidebarView, bi
         },
     };
     dispatcher.preview.bind_keyboard_view(&dispatcher.view);
+    let keycaps = Rc::downgrade(&sidebar.state);
+    dispatcher.shortcuts.connect_chord_changed(move |chord| {
+        if let Some(sidebar) = keycaps.upgrade() {
+            sidebar.show_place_keycaps(chord == Some(crate::ui::tenxer_mode::Chord::Go));
+        }
+    });
+    // gtk_window_destroy() unrealizes while other references still exist, so the
+    // Widget::destroy signal is too late to drop a pending chord.
+    let cancel_on_destroy = dispatcher.shortcuts.clone();
+    let go_on_destroy = dispatcher.go.clone();
+    window.connect_unrealize(move |_| {
+        cancel_on_destroy.cancel_chord();
+        go_on_destroy.invalidate();
+    });
+    bind_go_completion(&dispatcher);
+    bind_history_prompts(&dispatcher);
     let preferences = dispatcher.type_to_search.preferences.clone();
     release_preview_keys_on_mode_exit(window, &dispatcher.preview, &weak_browser);
+    clear_find_on_mode_exit(window, &dispatcher, &weak_browser);
+    bind_footer_filter(&dispatcher);
     keys.connect_key_pressed(move |_, key, _, modifiers| {
         let Some(browser) = weak_browser.upgrade() else {
             return Propagation::Proceed;
@@ -98,6 +127,7 @@ pub(super) fn install(window: &gtk::ApplicationWindow, sidebar: &SidebarView, bi
     window.add_controller(wheel);
 }
 
+/// Leaving 10xer mode ends preview key ownership but keeps the drawer open.
 fn release_preview_keys_on_mode_exit(
     window: &gtk::ApplicationWindow,
     preview: &PreviewDrawer,
@@ -111,6 +141,132 @@ fn release_preview_keys_on_mode_exit(
         move |window, enabled| {
             if !enabled
                 && preview.owns_focus(window.root().and_then(|root| root.focus()).as_ref())
+                && let Some(browser) = browser.upgrade()
+            {
+                browser.focus_active();
+            }
+        },
+    );
+}
+
+/// The **f** and **s** prompts filter and search as they are typed, and the
+/// footer reports the focused listing's filter or search while the mode is on.
+fn bind_footer_filter(dispatcher: &Dispatcher) {
+    let view = dispatcher.view.downgrade();
+    dispatcher
+        .shortcuts
+        .connect_prompt_changed(move |kind, text| {
+            let Some(view) = view.upgrade() else {
+                return;
+            };
+            match kind {
+                crate::ui::tenxer_mode::Prompt::Filter => view.set_listing_filter(&text),
+                crate::ui::tenxer_mode::Prompt::Search => view.set_listing_search(&text),
+                _ => {}
+            }
+        });
+    let view = dispatcher.view.downgrade();
+    dispatcher.shortcuts.observe_filter(move || {
+        if !crate::ui::tenxer_mode::chrome_suppressed() {
+            return Some(None);
+        }
+        view.upgrade()
+            .map_or(Some(None), |view| view.filter_status())
+    });
+    let shortcuts = dispatcher.shortcuts.clone();
+    dispatcher
+        .view
+        .connect_filter_results_changed(Rc::new(move || shortcuts.refresh_filter()));
+    let shortcuts = dispatcher.shortcuts.clone();
+    dispatcher
+        .view
+        .connect_search_selection_changed(Rc::new(move || shortcuts.schedule_filter_refresh()));
+}
+
+/// Opening, closing, or editing a prompt discards go completion that belongs to
+/// earlier text. Completion's own replacements are not edits.
+fn bind_go_completion(dispatcher: &Dispatcher) {
+    let go = dispatcher.go.clone();
+    dispatcher
+        .shortcuts
+        .connect_prompt_reset(move || go.invalidate());
+    let go = dispatcher.go.clone();
+    let hint = dispatcher
+        .shortcuts
+        .prompt_sink(crate::ui::tenxer_mode::Prompt::Go);
+    let create_hint = dispatcher
+        .shortcuts
+        .prompt_sink(crate::ui::tenxer_mode::Prompt::Create);
+    dispatcher
+        .shortcuts
+        .connect_prompt_changed(move |kind, _| match kind {
+            crate::ui::tenxer_mode::Prompt::Go => {
+                go.invalidate();
+                hint.show(None, None);
+            }
+            crate::ui::tenxer_mode::Prompt::Create => create_hint.show(None, None),
+            _ => {}
+        });
+}
+
+fn bind_history_prompts(dispatcher: &Dispatcher) {
+    let shortcuts = dispatcher.shortcuts.clone();
+    let history = dispatcher.history.clone();
+    let browser = Rc::downgrade(&dispatcher.view.browser());
+    dispatcher.shortcuts.connect_prompt_changed(move |kind, _| {
+        if let Some(browser) = browser.upgrade() {
+            prompts::show_history_candidates(&shortcuts, &history, &browser, kind);
+        }
+    });
+    let shortcuts = dispatcher.shortcuts.clone();
+    let view = dispatcher.view.clone();
+    dispatcher
+        .shortcuts
+        .connect_candidate_activated(move |path| {
+            if !shortcuts
+                .open_prompt_kind()
+                .is_some_and(crate::ui::tenxer_mode::Prompt::picks_history)
+            {
+                return;
+            }
+            shortcuts.dismiss_prompt();
+            if !view.focus_visible_results() {
+                view.browser().focus_active();
+            }
+            view.keyboard_navigation();
+            view.browser()
+                .navigate_with_selection(crate::model::Location::local(path), true);
+        });
+}
+
+/// Leaving 10xer mode forgets the find, footer filters, and search, and hands a focused
+/// prompt's keys back to the listing.
+fn clear_find_on_mode_exit(
+    window: &gtk::ApplicationWindow,
+    dispatcher: &Dispatcher,
+    browser: &std::rc::Weak<Browser>,
+) {
+    let view = dispatcher.view.downgrade();
+    let shortcuts = dispatcher.shortcuts.clone();
+    let browser = browser.clone();
+    crate::ui::preferences::PreferenceManager::shared().bind_preference(
+        window,
+        crate::ui::preferences::PreferenceManager::tenxer_mode,
+        move |window, enabled| {
+            if enabled {
+                shortcuts.refresh_filter();
+                return;
+            }
+            if let Some(view) = view.upgrade() {
+                view.clear_find();
+                view.forget_listing_search();
+                view.clear_hidden_filters();
+            }
+            shortcuts.refresh_filter();
+            let focus = window.root().and_then(|root| root.focus());
+            let prompt_focused = shortcuts.prompt_has_focus();
+            shortcuts.dismiss_prompt();
+            if (prompt_focused || focus.is_none())
                 && let Some(browser) = browser.upgrade()
             {
                 browser.focus_active();
@@ -288,6 +444,8 @@ struct Dispatcher {
     preview: PreviewDrawer,
     type_to_search: TypeToSearch,
     shortcuts: ShortcutFooter,
+    go: GoCompletion,
+    history: Rc<NavigationHistory>,
 }
 
 struct KeyEvent {
@@ -326,6 +484,9 @@ impl Dispatcher {
     fn handle_key(&self, browser: &Rc<Browser>, key: Key, modifiers: Modifiers) -> Propagation {
         let preferences = &self.type_to_search.preferences;
         if let Some(size) = preferences.text_size().for_shortcut(key, modifiers) {
+            // Text-size shortcuts run before the chord consumer. Drop the mark
+            // first, then resize, matching Ctrl+, opening Settings.
+            self.shortcuts.cancel_chord();
             preferences.set_text_size(size);
             return Propagation::Stop;
         }
@@ -402,6 +563,7 @@ impl Dispatcher {
         if let Some(layer) = visible_modal_layer(&self.window) {
             let focus_is_inside = gtk::prelude::RootExt::focus(&self.window)
                 .is_some_and(|focus| focus == layer || focus.is_ancestor(&layer));
+            self.shortcuts.cancel_chord();
             if !focus_is_inside {
                 layer.grab_focus();
                 return Some(Propagation::Stop);
@@ -412,23 +574,35 @@ impl Dispatcher {
             return Some(Propagation::Proceed);
         }
         if self.shortcuts.prompt_has_focus() {
-            if let Some(result) = self.shortcuts.handle_key(key, modifiers) {
+            if let Some(result) = self.footer_key(key, modifiers) {
                 return Some(result);
             }
-            return Some(Propagation::Proceed);
+            return Some(self.prompt_key(browser, key, modifiers));
         }
         if let Some(result) = self.tenxer_preview_text(browser, key, modifiers) {
             return Some(result);
         }
         if !self.inline_editing_active()
-            && let Some(result) = self.shortcuts.handle_key(key, modifiers)
+            && let Some(result) = self.footer_key(key, modifiers)
         {
             return Some(result);
         }
         if key == Key::Escape && crate::ui::scrolling::stop_autoscroll() {
+            self.shortcuts.cancel_chord();
             return Some(Propagation::Stop);
         }
         None
+    }
+
+    /// Shortcut-reference keys run before the chord consumer. A visible prompt
+    /// keeps its armed chord; every other claimed footer key cancels first.
+    fn footer_key(&self, key: Key, modifiers: Modifiers) -> KeyResult {
+        let prompted = self.shortcuts.prompt_is_visible();
+        let result = self.shortcuts.handle_key(key, modifiers)?;
+        if !prompted {
+            self.shortcuts.cancel_chord();
+        }
+        Some(result)
     }
 
     fn inline_editing_active(&self) -> bool {
@@ -461,7 +635,11 @@ impl Dispatcher {
             return None;
         }
         if (self.text_focused() && !self.preview_document_focused()) || self.focus_in_popover() {
+            self.shortcuts.cancel_chord();
             return None;
+        }
+        if let Some(result) = self.tenxer_chord(browser, key, modifiers) {
+            return Some(result);
         }
         if !items::continues_extend(key, modifiers) {
             browser.end_extend();
@@ -487,6 +665,12 @@ impl Dispatcher {
         }
         if self.tenxer_header_focused(&focus)
             && let Some(result) = self.tenxer_header(browser, key, modifiers)
+        {
+            return Some(result);
+        }
+        if let Some(result) = self
+            .tenxer_prompt_keys(key, modifiers)
+            .or_else(|| self.tenxer_file_keys(key, modifiers))
         {
             return Some(result);
         }

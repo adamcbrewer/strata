@@ -294,7 +294,9 @@ impl ModeViews {
             BrowserEvent::FocusChanged { depth, .. } => {
                 let positions = self.browser.selected_positions(*depth);
                 self.update_panes(*depth, |pane| set_selections(pane, &positions));
-                self.focus_visible_pane(*depth);
+                if !self.cursor_keeps_focus.get() {
+                    self.focus_visible_pane(*depth);
+                }
             }
             _ => {}
         }

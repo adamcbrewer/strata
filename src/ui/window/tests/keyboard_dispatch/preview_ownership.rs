@@ -5,6 +5,7 @@ use crate::services::{ArchiveDirectory, ArchiveNode, ArchivePreviewTree};
 
 const LONG_LINES: usize = 600;
 
+/// Serves a long document, an archive tree, and a password-protected archive.
 struct OwnershipPreview;
 
 impl PreviewProvider for OwnershipPreview {
@@ -77,7 +78,7 @@ fn ownership_fixture() -> KeyboardFixture {
     preferences.set_tenxer_mode(true);
     preferences.set_group_by_type(false);
     let browser = fixture.view.browser();
-    // The shared fixture does not wire the window's cursor-follow behavior.
+    // The window wires cursor-follow; the shared fixture does not.
     fixture.preview.observe_browser(&browser);
     fixture.view.refresh();
     wait_loaded(&browser, 0);
@@ -253,8 +254,35 @@ fn tenxer_preview_owns_document_keys_until_returned() {
                 assert!(bottom > top);
                 fixture.press(Key::Home, ModifierType::empty());
                 assert_eq!(document_scroll(&fixture), top, "{mode:?}");
+                fixture.press(Key::G, ModifierType::SHIFT_MASK);
+                fixture.press(Key::g, ModifierType::empty());
+                wait_until(|| {
+                    fixture.shortcuts.chord_options() == Some(vec![("g".into(), "Top".into())])
+                });
+                fixture.press(Key::g, ModifierType::empty());
+                assert_eq!(document_scroll(&fixture), top, "{mode:?} g g");
+                fixture.press(Key::g, ModifierType::empty());
+                fixture.press(Key::h, ModifierType::empty());
+                assert_eq!(fixture.shortcuts.feedback_text(), "Unknown chord");
+                assert!(preview_has_focus(&fixture), "{mode:?} g h stays");
+                assert_eq!(browser.active_location(), origin, "{mode:?} g h");
+                fixture.shortcuts.dismiss_feedback();
                 assert_eq!(focused_name(&browser), "long.txt", "{mode:?}");
                 assert_eq!(fixture.selected(), selection, "{mode:?}");
+
+                let sidebar_shown = fixture.sidebar_toggle.is_active();
+                fixture.press(Key::n, ModifierType::CONTROL_MASK);
+                assert_ne!(
+                    fixture.sidebar_toggle.is_active(),
+                    sidebar_shown,
+                    "{mode:?} Ctrl+N passes through the preview"
+                );
+                assert!(
+                    preview_has_focus(&fixture),
+                    "{mode:?} Ctrl+N keeps the keys"
+                );
+                fixture.press(Key::n, ModifierType::CONTROL_MASK);
+                assert_eq!(fixture.sidebar_toggle.is_active(), sidebar_shown);
 
                 fixture.press(Key::h, ModifierType::empty());
                 wait_until(|| fixture.view.item_view_has_focus());

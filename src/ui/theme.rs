@@ -396,6 +396,7 @@ impl ThemeManager {
                 surface: color(&tokens.surface),
             });
         super::document_media::apply_theme(tokens);
+        super::browser::find::apply_theme(&tokens.accent, &tokens.background);
         let root_font_px = snapped_root_font_px(
             self.preferences.text_size().root_font_px(),
             desktop_text_scale_factor(),

@@ -15,6 +15,7 @@ mod document_view;
 mod entry_list_model;
 mod focus_navigation;
 mod frame;
+mod go_completion;
 mod icons_cell;
 mod inline_search;
 mod input_ownership;

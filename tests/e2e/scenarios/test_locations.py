@@ -99,6 +99,168 @@ def test_a_sidebar_place_navigates_there(strata):
     strata.entry("sidebar-target.txt")
 
 
+@pytest.fixture
+def places(test_environment):
+    """Downloads exists and Documents is missing; pins are stored beta,
+    Downloads (hidden as a standard place), alpha."""
+
+    home = test_environment.home
+    for name in ("Downloads", "pins/beta", "pins/alpha"):
+        (home / name).mkdir(parents=True)
+    config = test_environment.config_home
+    (config / "user-dirs.dirs").write_text(
+        'XDG_DOWNLOAD_DIR="$HOME/Downloads"\nXDG_DOCUMENTS_DIR="$HOME/Documents"\n'
+    )
+    (config / "gtk-3.0").mkdir(exist_ok=True)
+    (config / "gtk-3.0" / "bookmarks").write_text(
+        "".join(
+            f"{(home / name).as_uri()} {label}\n"
+            for name, label in (
+                ("pins/beta", "Beta"),
+                ("Downloads", "Downloads"),
+                ("pins/alpha", "Alpha"),
+            )
+        )
+    )
+    return home
+
+
+@pytest.mark.preferences(tenxer_mode=True, type_to_search=False)
+def test_tenxer_go_chord_jumps_to_places_and_visible_pins(places, strata):
+    root = strata.current_directory()
+
+    for second, message in (
+        ("k", "No Documents folder"),
+        ("3", "No pin 3"),
+        ("z", "Unknown chord"),
+    ):
+        strata.keyboard.press("g")
+        strata.keyboard.press(second)
+        strata.wait(
+            lambda: strata.window.find(role="label", name=message) is not None,
+            f"g {second} to report {message!r}",
+        )
+        assert strata.current_directory() == root
+
+    for second, directory in (
+        ("h", places.name),
+        ("d", "Downloads"),
+        ("2", "alpha"),
+        ("1", "beta"),
+    ):
+        strata.keyboard.press("g")
+        strata.keyboard.press(second)
+        strata.wait_for_directory(directory)
+
+    strata.keyboard.press("g")
+    strata.keyboard.press("Escape")
+    strata.keyboard.press("h")
+    strata.wait_for_directory("pins")
+
+
+@pytest.mark.preferences(tenxer_mode=True, type_to_search=False)
+def test_tenxer_go_prompt_completes_folders_and_navigates(strata):
+    (strata.fixture.path("documents") / "drafts").mkdir()
+
+    strata.keyboard.press("g")
+    strata.keyboard.press("space")
+    field = strata.editable_field()
+    assert strata.window.find(role="text", name="Go to a path or URI") is not None
+    for key, expected in (
+        ("Tab", "archive/"),
+        ("Tab", "documents/"),
+        ("Tab", "pictures/"),
+        ("shift+Tab", "documents/"),
+    ):
+        strata.keyboard.press(key)
+        strata.wait(lambda: field.text == expected, f"{key} to complete {expected}")
+    strata.keyboard.type_text("dr")
+    strata.keyboard.press("Tab")
+    strata.wait(
+        lambda: field.text == "documents/drafts/",
+        "Tab after a slash to complete from that folder",
+    )
+    strata.keyboard.press("Return")
+    strata.wait_for_directory("drafts")
+
+    secret = "sftp://user:hunter2@inert.invalid/srv/"
+    strata.keyboard.press("g")
+    strata.keyboard.press("space")
+    field = strata.editable_field()
+    strata.keyboard.type_text(secret)
+    strata.keyboard.press("Tab")
+    strata.wait(
+        lambda: strata.window.find(role="label", name="URIs are not completed")
+        is not None,
+        "Tab to leave a URI alone",
+    )
+    assert field.text == secret
+    strata.keyboard.press("Escape")
+    strata.wait(
+        lambda: strata.window.find(role="text", states={"editable", "focused"}) is None,
+        "Escape to close the go prompt",
+    )
+    strata.wait_for_directory("drafts")
+
+    strata.keyboard.press("g")
+    strata.keyboard.press("space")
+    field = strata.editable_field()
+    assert field.text == "", "reopening recovers no typed text"
+    strata.keyboard.press("Escape")
+
+
+@pytest.mark.preferences(tenxer_mode=True, type_to_search=False)
+def test_tenxer_history_prompts_jump_to_visited_folders(strata):
+    for path, directory in (
+        ("documents", "documents"),
+        ("../pictures", "pictures"),
+        ("../archive", "archive"),
+    ):
+        strata.keyboard.press("g")
+        strata.keyboard.press("space")
+        strata.editable_field()
+        strata.keyboard.type_text(path)
+        strata.keyboard.press("Return")
+        strata.wait_for_directory(directory)
+
+    strata.keyboard.press("z")
+    field = strata.editable_field()
+    assert strata.window.find(role="text", name="Jump to a visited folder") is not None
+    strata.keyboard.type_text("qqqq")
+    strata.wait(
+        lambda: strata.window.find(role="label", name="No matching folders")
+        is not None,
+        "a miss to report no matching folders",
+    )
+    strata.keyboard.press("Return")
+    assert strata.current_directory() == "archive", "a miss never navigates"
+    for _ in "qqqq":
+        strata.keyboard.press("BackSpace")
+    strata.keyboard.type_text("doc")
+    strata.wait(lambda: field.text == "doc", "the query to be typed")
+    strata.keyboard.press("Return")
+    strata.wait_for_directory("documents")
+
+    strata.keyboard.press("shift+Z")
+    assert (
+        strata.window.find(role="text", name="Jump to a recently visited folder")
+        is not None
+    )
+    strata.keyboard.press("Down")
+    strata.keyboard.press("Escape")
+    strata.wait(
+        lambda: strata.window.find(role="text", states={"editable", "focused"}) is None,
+        "Escape to close the recent prompt",
+    )
+    assert strata.current_directory() == "documents", "Escape opens nothing"
+
+    strata.keyboard.press("shift+Z")
+    strata.editable_field()
+    strata.keyboard.type_text("arch")
+    strata.keyboard.press("Return")
+    strata.wait_for_directory("archive")
+
+
 @pytest.mark.parametrize("mode", COLUMNS_AND_ONE)
 def test_refresh_reconciles_external_file_creation_and_removal(strata, mode):
     strata.entry("todo.txt")

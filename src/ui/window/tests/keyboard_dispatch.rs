@@ -12,6 +12,11 @@ use super::super::*;
 use crate::services::{
     LoadHandle, Preview, PreviewContent, PreviewEvent, PreviewProvider, PreviewRequest,
 };
+mod file_commands;
+mod folder_jump;
+mod footer_prompt;
+mod go_prompt;
+mod place_chords;
 mod preview_ownership;
 
 use crate::ui::{
@@ -48,7 +53,9 @@ struct KeyboardFixture {
     sidebar_toggle: gtk::ToggleButton,
     shortcuts: ShortcutFooter,
     keys: gtk::EventControllerKey,
+    history: Rc<crate::services::NavigationHistory>,
     _directory: tempfile::TempDir,
+    _history_directory: tempfile::TempDir,
 }
 
 impl KeyboardFixture {
@@ -57,6 +64,19 @@ impl KeyboardFixture {
     }
 
     fn with_provider(provider: Rc<dyn crate::services::PreviewProvider>) -> Self {
+        Self::with_parts(
+            provider,
+            Rc::new(crate::ui::go_completion::GioFolders),
+            browser_for_window,
+        )
+    }
+
+    /// `view` runs after the preferences are seeded, which it reads on creation.
+    fn with_parts(
+        provider: Rc<dyn crate::services::PreviewProvider>,
+        folders: Rc<dyn crate::ui::go_completion::FolderSource>,
+        view: impl FnOnce() -> BrowserView,
+    ) -> Self {
         PreferenceManager::seed_saved_preferences_for_test();
         let preferences = PreferenceManager::shared();
         preferences.set_sidebar_show_home(true);
@@ -65,7 +85,11 @@ impl KeyboardFixture {
         for name in ["a.txt", "b.txt", "c.txt"] {
             std::fs::write(directory.path().join(name), b"preview").expect("fixture file");
         }
-        let view = browser_for_window();
+        let history_directory = tempfile::tempdir().expect("history fixture");
+        let history = Rc::new(crate::services::NavigationHistory::open(
+            history_directory.path().join("history.json"),
+        ));
+        let view = view();
         view.set_view_mode(BrowserMode::Columns);
         let sidebar = build_sidebar(view.clone(), preferences.clone(), true);
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -101,6 +125,8 @@ impl KeyboardFixture {
                     preferences,
                 },
                 shortcuts: shortcuts.clone(),
+                folders,
+                history: history.clone(),
             },
         );
         let controllers = window.observe_controllers();
@@ -131,7 +157,9 @@ impl KeyboardFixture {
             sidebar_toggle: toggle,
             shortcuts: shortcuts.clone(),
             keys,
+            history,
             _directory: directory,
+            _history_directory: history_directory,
         }
     }
 
@@ -886,6 +914,12 @@ fn tenxer_visual_ranges_select_unset_and_keep_the_fill() {
                     for name in ["a.txt", "c.txt", focused.as_str()] {
                         assert!(fill.iter().any(|filled| filled == name), "{fill:?}");
                     }
+                    assert!(fixture.press(Key::Page_Down, shift));
+                    let fill = fill_names(&browser);
+                    let focused = focused_name(&browser);
+                    for name in ["a.txt", "c.txt", focused.as_str()] {
+                        assert!(fill.iter().any(|filled| filled == name), "{fill:?}");
+                    }
                 } else {
                     assert!(fixture.press(Key::Down, shift));
                     fixture.press(Key::Down, shift);
@@ -913,6 +947,22 @@ fn tenxer_visual_ranges_select_unset_and_keep_the_fill() {
                         fill_names(&browser),
                         ["a.txt", "b.txt", "c.txt", "d.txt"],
                         "{mode:?} the next run anchors at the cursor"
+                    );
+                    assert!(fixture.press(Key::Page_Down, shift));
+                    let fill = fill_names(&browser);
+                    let focused = focused_name(&browser);
+                    for name in ["a.txt", "c.txt", "d.txt", focused.as_str()] {
+                        assert!(fill.iter().any(|filled| filled == name), "{fill:?}");
+                    }
+                    assert!(
+                        !fill.iter().any(|filled| filled == "b.txt"),
+                        "{mode:?} Shift+Page Down continues the run: {fill:?}"
+                    );
+                    fixture.press(Key::Page_Up, shift);
+                    assert_eq!(
+                        fill_names(&browser),
+                        ["a.txt", "b.txt", "c.txt", "d.txt"],
+                        "{mode:?} Shift+Page Up reverses it"
                     );
                 }
                 assert_eq!(fixture.shortcuts.visual_text(), None, "{mode:?}");
@@ -970,6 +1020,9 @@ fn tenxer_visual_ranges_select_unset_and_keep_the_fill() {
             assert_eq!(fixture.shortcuts.visual_text(), None);
             wait_until(|| fixture.shortcuts.feedback_text().is_empty());
             fixture.press(Key::Down, ModifierType::SHIFT_MASK);
+            assert_eq!(fixture.shortcuts.feedback_text(), "Nothing to select");
+            wait_until(|| fixture.shortcuts.feedback_text().is_empty());
+            fixture.press(Key::Page_Down, ModifierType::SHIFT_MASK);
             assert_eq!(fixture.shortcuts.feedback_text(), "Nothing to select");
         },
     );
@@ -1092,8 +1145,12 @@ fn tenxer_file_list_skips_conflicting_defaults_and_keeps_bound_shortcuts() {
                 assert!(preferences.tenxer_mode(), "{key:?} must not leave the mode");
             }
             select_named(&fixture, "folder");
+            fixture.press(Key::Y, ModifierType::SHIFT_MASK);
+            fixture.shortcuts.dismiss_feedback();
             fixture.press(Key::p, ModifierType::empty());
             assert_eq!(pins.get(), 0, "p must not pin while 10xer is on");
+            assert_eq!(fixture.shortcuts.feedback_text(), "Nothing to paste");
+            fixture.shortcuts.dismiss_feedback();
             fixture.view.browser().select(0, 0);
             focus_files(&fixture);
             let control = ModifierType::CONTROL_MASK;
@@ -1329,15 +1386,23 @@ fn hidden_shortcut_button_keeps_prompt_chord_and_feedback_usable() {
                 .expect("shortcuts button");
             assert!(!button.is_visible());
             assert!(fixture.shortcuts.tag_visible());
-            fixture.shortcuts.show_prompt();
-            fixture.shortcuts.arm_chord("g-");
+            fixture
+                .shortcuts
+                .arm_chord(crate::ui::tenxer_mode::Chord::Go);
             fixture.shortcuts.show_feedback("Copied");
-            assert!(gtk::prelude::WidgetExt::is_visible(
-                fixture.shortcuts.prompt()
-            ));
-            assert!(fixture.shortcuts.prompt().is_sensitive());
             assert_eq!(fixture.shortcuts.chord().text(), "g-");
             assert!(fixture.shortcuts.chord().is_visible());
+            assert!(
+                fixture
+                    .shortcuts
+                    .open_prompt(crate::ui::tenxer_mode::Prompt::Find)
+            );
+            assert!(fixture.shortcuts.prompt().is_sensitive());
+            assert_eq!(
+                fixture.shortcuts.armed_chord(),
+                None,
+                "the prompt covers the chord mark, so it cancels the chord"
+            );
             fixture.shortcuts.prompt().set_text("keep");
             assert!(fixture.shortcuts.prompt().grab_focus());
             let names = directory_names(fixture._directory.path());
@@ -1350,8 +1415,6 @@ fn hidden_shortcut_button_keeps_prompt_chord_and_feedback_usable() {
                     .is_some_and(|popover| popover.is_visible())
             });
             assert_eq!(fixture.shortcuts.prompt().text(), "keep");
-            assert!(fixture.shortcuts.chord().is_visible());
-            assert_eq!(fixture.shortcuts.chord().text(), "g-");
             fixture.press(Key::Escape, ModifierType::empty());
             wait_until(|| {
                 widget_with_class(fixture.window.upcast_ref(), "shortcut-popover")
@@ -1360,15 +1423,16 @@ fn hidden_shortcut_button_keeps_prompt_chord_and_feedback_usable() {
             assert_eq!(fixture.shortcuts.prompt().text(), "keep");
             assert!(fixture.shortcuts.prompt().grab_focus());
             assert!(fixture.press(Key::Escape, ModifierType::empty()));
-            assert!(!gtk::prelude::WidgetExt::is_visible(
-                fixture.shortcuts.prompt()
-            ));
+            assert_eq!(fixture.shortcuts.prompt_label(), None);
             assert!(fixture.shortcuts.prompt().text().is_empty());
             fixture.shortcuts.dismiss_feedback();
             assert!(!widget_text_visible(
                 fixture.shortcuts.widget().upcast_ref(),
                 "Copied"
             ));
+            fixture
+                .shortcuts
+                .arm_chord(crate::ui::tenxer_mode::Chord::Go);
             assert!(fixture.shortcuts.chord().is_visible());
             preferences.set_tenxer_mode(false);
             pump(50);
@@ -1565,6 +1629,53 @@ fn tenxer_entries_menus_and_reference_keep_their_keys() {
 }
 
 #[test]
+fn shift_page_keys_extend_the_selection_in_every_view() {
+    crate::test_support::gtk_test(
+        "ui::window::tests::keyboard_dispatch::shift_page_keys_extend_the_selection_in_every_view",
+        || {
+            let fixture = KeyboardFixture::new();
+            PreferenceManager::shared().set_group_by_type(false);
+            let browser = fixture.view.browser();
+            for index in 0..40 {
+                std::fs::write(
+                    fixture._directory.path().join(format!("n{index:02}.txt")),
+                    b"n",
+                )
+                .expect("page file");
+            }
+            fixture.view.refresh();
+            wait_until(|| entry_count(&browser) == 43);
+            let none = ModifierType::empty();
+            let shift = ModifierType::SHIFT_MASK;
+            for mode in [BrowserMode::Columns, BrowserMode::List, BrowserMode::Icons] {
+                fixture.view.set_view_mode(mode);
+                browser.select(0, 0);
+                focus_files(&fixture);
+
+                assert!(fixture.press(Key::Page_Down, shift), "{mode:?}");
+                let paged = focused_index(&browser);
+                assert!(paged > 0, "{mode:?} Shift+Page Down moves the cursor");
+                assert_eq!(
+                    fixture.selected(),
+                    (0..=paged).collect::<Vec<_>>(),
+                    "{mode:?} Shift+Page Down extends from the anchor"
+                );
+                assert!(fixture.press(Key::Page_Up, shift), "{mode:?}");
+                assert_eq!(fixture.selected(), [0], "{mode:?} Shift+Page Up contracts");
+
+                assert!(fixture.press(Key::Page_Down, shift), "{mode:?}");
+                assert!(fixture.press(Key::Page_Down, none), "{mode:?}");
+                assert_eq!(
+                    fixture.selected(),
+                    [focused_index(&browser)],
+                    "{mode:?} a plain Page Down still replaces the selection"
+                );
+            }
+        },
+    );
+}
+
+#[test]
 fn tenxer_list_and_columns_move_enter_and_traverse_history() {
     crate::test_support::gtk_test(
         "ui::window::tests::keyboard_dispatch::tenxer_list_and_columns_move_enter_and_traverse_history",
@@ -1676,6 +1787,14 @@ fn tenxer_list_and_columns_move_enter_and_traverse_history() {
             assert!(!fixture.view.filter_has_focus());
             assert!(fixture.sidebar_toggle.is_active());
             assert!(!fixture.preview.is_open());
+            fixture.press(Key::n, ModifierType::CONTROL_MASK);
+            assert!(
+                !fixture.sidebar_toggle.is_active(),
+                "Ctrl+N hides the sidebar"
+            );
+            assert!(fixture.view.item_view_has_focus());
+            fixture.press(Key::n, ModifierType::CONTROL_MASK);
+            assert!(fixture.sidebar_toggle.is_active(), "Ctrl+N shows it again");
 
             browser.set_sort(0, SortKey::Name, SortDirection::Descending);
             wait_until(|| {
@@ -1904,6 +2023,11 @@ fn tenxer_list_and_columns_move_enter_and_traverse_history() {
             assert!(fixture.sidebar_toggle.is_active());
             fixture.press(Key::b, ModifierType::CONTROL_MASK);
             assert!(!fixture.sidebar_toggle.is_active());
+            fixture.press(Key::n, ModifierType::CONTROL_MASK);
+            assert!(
+                !fixture.sidebar_toggle.is_active(),
+                "Ctrl+N toggles only in 10xer mode"
+            );
 
             preferences.set_tenxer_mode(true);
             focus_files(&fixture);

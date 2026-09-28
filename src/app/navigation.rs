@@ -1434,6 +1434,36 @@ impl NavigationState {
             .collect()
     }
 
+    /// The pane's committed fill in listing order, or its cursor item when
+    /// nothing is filled. A load cursor is not a fill, and another pane's
+    /// open-path marker is never a target.
+    pub fn command_entries(&self, depth: usize) -> Vec<FileEntry> {
+        let Some(column) = self.columns.get(depth) else {
+            return Vec::new();
+        };
+        let visible = |entry: &FileEntry| column.preferences.show_hidden || !entry.is_hidden;
+        if column.load_cursor.is_none() && !column.selected_locations.is_empty() {
+            let filled: Vec<FileEntry> = column
+                .entries
+                .iter()
+                .filter(|entry| {
+                    visible(entry) && column.selected_locations.contains(&entry.location)
+                })
+                .cloned()
+                .collect();
+            if !filled.is_empty() {
+                return filled;
+            }
+        }
+        column
+            .selected
+            .and_then(|position| column.entries.get(position))
+            .filter(|entry| visible(entry))
+            .cloned()
+            .into_iter()
+            .collect()
+    }
+
     pub fn selection_is_load_cursor(&self) -> bool {
         self.active_column
             .and_then(|depth| self.columns.get(depth))
@@ -1539,20 +1569,41 @@ impl NavigationState {
         self.shift_cursor(direction, page, order, false)
     }
 
-    fn shift_cursor(
+    pub fn extend_page_selection(
         &mut self,
         direction: i32,
         page: usize,
         order: Option<&[usize]>,
-        replace_fill: bool,
-    ) -> Option<(usize, usize, bool)> {
+    ) -> Option<(usize, usize, Vec<usize>)> {
+        let (depth, visible, position) = self.page_target(direction, page, order)?;
+        let column = self.columns.get_mut(depth)?;
+        let anchored = column
+            .selection_anchor
+            .as_ref()
+            .is_some_and(|anchor| column.entries.iter().any(|entry| &entry.location == anchor));
+        if column.selected_locations.is_empty() || !anchored {
+            column.selection_anchor = column
+                .selected
+                .and_then(|cursor| column.entries.get(cursor))
+                .map(|entry| entry.location.clone());
+        }
+        let positions = self.extend_visual_selection(depth, position, &visible)?;
+        Some((depth, position, positions))
+    }
+
+    fn page_target(
+        &self,
+        direction: i32,
+        page: usize,
+        order: Option<&[usize]>,
+    ) -> Option<(usize, Vec<usize>, usize)> {
         if direction == 0 {
             return None;
         }
         let depth = self
             .active_column
             .or_else(|| self.columns.len().checked_sub(1))?;
-        let column = self.columns.get_mut(depth)?;
+        let column = self.columns.get(depth)?;
         let visible: Vec<usize> = match order {
             Some(order) if !order.is_empty() => order.to_vec(),
             _ => visible_positions(column),
@@ -1572,6 +1623,18 @@ impl NavigationState {
             (Some(current), false) => current.saturating_add(steps).min(last),
         };
         let position = visible[target];
+        Some((depth, visible, position))
+    }
+
+    fn shift_cursor(
+        &mut self,
+        direction: i32,
+        page: usize,
+        order: Option<&[usize]>,
+        replace_fill: bool,
+    ) -> Option<(usize, usize, bool)> {
+        let (depth, _, position) = self.page_target(direction, page, order)?;
+        let column = self.columns.get_mut(depth)?;
         let cleared = if replace_fill {
             self.visual = None;
             focus_only(column, position);
@@ -1652,6 +1715,19 @@ impl NavigationState {
 
     pub fn entry_at(&self, depth: usize, position: usize) -> Option<FileEntry> {
         self.columns.get(depth)?.entries.get(position).cloned()
+    }
+
+    pub fn folder_names(&self, depth: usize, include_hidden: bool) -> Vec<std::ffi::OsString> {
+        let Some(column) = self.columns.get(depth) else {
+            return Vec::new();
+        };
+        let show_hidden = include_hidden || column.preferences.show_hidden;
+        column
+            .entries
+            .iter()
+            .filter(|entry| entry.is_directory() && (show_hidden || !entry.is_hidden))
+            .map(|entry| entry.native_name.clone())
+            .collect()
     }
 
     pub fn column_entry_counts(&self, depth: usize) -> Option<ColumnEntryCounts> {

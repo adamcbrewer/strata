@@ -185,17 +185,17 @@ def test_space_opens_and_closes_the_quick_preview(strata, mode, selection):
 
 
 @pytest.mark.preferences(browser_mode="columns", single_click_previews=True)
-def test_columns_keyboard_selection_opens_the_preview(strata, fixture_tree):
+def test_columns_keyboard_selection_opens_the_preview(strata, fixture_tree, root):
     strata.select_entry_with_keyboard("data.csv")
     strata.wait(
         lambda: strata.preview_shows("alpha"),
         "keyboard selection to open the preview without Space",
     )
     strata.keyboard.press(PREVIOUS_ENTRY_KEY["Columns"])
-    strata.wait_for_selection(["folder"])
+    strata.wait_for_selection(["folder"], root)
     strata.wait(lambda: strata.preview() is None, "the folder to hide the preview")
     strata.keyboard.press(NEXT_ENTRY_KEY["Columns"])
-    strata.wait_for_selection(["data.csv"])
+    strata.wait_for_selection(["data.csv"], root)
     strata.wait(lambda: strata.preview_shows("alpha"), "the preview to resume")
 
 

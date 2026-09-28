@@ -360,6 +360,11 @@ fn credentials_from_location_input(
     Ok((sanitized, credentials))
 }
 
+pub(super) enum TypedLocation {
+    Navigating,
+    Mounting { sanitized: String },
+}
+
 #[derive(Clone)]
 pub(super) struct MountCredentials {
     anonymous: bool,
@@ -1258,24 +1263,36 @@ impl ViewState {
     pub(super) fn submit_location(self: &Rc<Self>) {
         self.path_completion.dismiss();
         let input = self.location_entry.text();
-        let (input, credentials) = match credentials_from_location_input(input.as_str()) {
-            Ok(parsed) => parsed,
+        match self.open_typed_location(input.as_str(), None) {
+            Ok(TypedLocation::Navigating) => {
+                self.location_stack.set_visible_child_name("breadcrumbs");
+                self.browser.focus_active();
+            }
+            Ok(TypedLocation::Mounting { sanitized }) => {
+                if sanitized != input.as_str() {
+                    self.location_entry.set_text(&sanitized);
+                }
+            }
             Err(error) => {
                 self.location_stack.set_visible_child_name("breadcrumbs");
                 self.restore_location_text();
                 show_error_dialog(&self.overlay, "Unable to open location", &error.to_string());
-                return;
             }
-        };
-        if credentials.is_some() {
-            self.location_entry.set_text(&input);
         }
+    }
+
+    /// Navigates to typed `input`, mounting first when the location needs it.
+    /// Credentials embedded in a URI move into the mount operation and are
+    /// never kept with the text. A relative path resolves against `base`.
+    pub(super) fn open_typed_location(
+        self: &Rc<Self>,
+        input: &str,
+        base: Option<&Path>,
+    ) -> Result<TypedLocation, LocationValidationError> {
+        let (input, credentials) = credentials_from_location_input(input)?;
         self.pending_location_credentials.replace(credentials);
-        match self.browser.navigate_input(&input) {
-            Ok(()) => {
-                self.location_stack.set_visible_child_name("breadcrumbs");
-                self.browser.focus_active();
-            }
+        match self.browser.navigate_input_from(&input, base) {
+            Ok(()) => Ok(TypedLocation::Navigating),
             Err(LocationValidationError::NotMounted(location)) => {
                 let credentials = self.pending_location_credentials.take();
                 self.mount_then_navigate_with_credentials(
@@ -1283,6 +1300,7 @@ impl ViewState {
                     MountStrategy::EnclosingVolume,
                     credentials,
                 );
+                Ok(TypedLocation::Mounting { sanitized: input })
             }
             Err(LocationValidationError::Mountable(location)) => {
                 let credentials = self.pending_location_credentials.take();
@@ -1291,12 +1309,11 @@ impl ViewState {
                     MountStrategy::Mountable,
                     credentials,
                 );
+                Ok(TypedLocation::Mounting { sanitized: input })
             }
             Err(error) => {
                 self.pending_location_credentials.take();
-                self.location_stack.set_visible_child_name("breadcrumbs");
-                self.restore_location_text();
-                show_error_dialog(&self.overlay, "Unable to open location", &error.to_string());
+                Err(error)
             }
         }
     }

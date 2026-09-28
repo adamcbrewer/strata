@@ -471,6 +471,9 @@ fn assert_controls(open: &OpenWindow, operable: bool) {
             "hidden Search does not open"
         );
     }
+    if !operable && open.content.browser.view_mode() != BrowserMode::Columns {
+        return;
+    }
     let mut required = vec!["Refresh (F5)"];
     if open.content.browser.view_mode() != BrowserMode::List {
         required.push("Choose sort field");

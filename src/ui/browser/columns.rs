@@ -129,6 +129,7 @@ pub(super) fn install_resize_edges(state: &Rc<ViewState>) {
             gesture.set_state(gtk::EventSequenceState::Denied);
             return;
         };
+        state.column_resizing.set(true);
         let now = glib::monotonic_time() as u64;
         let autofit = last_press
             .borrow()
@@ -156,7 +157,10 @@ pub(super) fn install_resize_edges(state: &Rc<ViewState>) {
             Some((shell.clone(), shell.width().max(COLUMN_WIDTH), pointer_x));
         gesture.set_state(gtk::EventSequenceState::Claimed);
     });
+    let weak_for_end = Rc::downgrade(state);
     let active_for_update = active.clone();
+    let active_for_end = active.clone();
+    let active_for_cancel = active.clone();
     resize.connect_drag_update(move |gesture, fallback_offset_x, _| {
         let active = active_for_update.borrow();
         let Some((shell, initial, start)) = active.as_ref() else {
@@ -169,7 +173,17 @@ pub(super) fn install_resize_edges(state: &Rc<ViewState>) {
         shell.set_size_request(resized_column_width(*initial, offset_x), -1);
     });
     resize.connect_drag_end(move |_, _, _| {
-        active.borrow_mut().take();
+        active_for_end.borrow_mut().take();
+        if let Some(state) = weak_for_end.upgrade() {
+            state.column_resizing.set(false);
+        }
+    });
+    let weak_for_cancel = Rc::downgrade(state);
+    resize.connect_cancel(move |_, _| {
+        active_for_cancel.borrow_mut().take();
+        if let Some(state) = weak_for_cancel.upgrade() {
+            state.column_resizing.set(false);
+        }
     });
     state.scroller.add_controller(resize);
 }
@@ -252,6 +266,19 @@ pub(super) struct ColumnView {
 }
 
 impl ColumnView {
+    pub(super) fn flush_filter_query(&self) {
+        if let Some(binding) = self.query_binding.borrow().as_ref() {
+            binding.flush();
+        }
+    }
+
+    pub(super) fn with_query_binding<T>(
+        &self,
+        apply: impl FnOnce(&super::collection::FilterQueryBinding) -> T,
+    ) -> Option<T> {
+        self.query_binding.borrow().as_ref().map(apply)
+    }
+
     pub(super) fn context_menu_target(
         &self,
         position: Option<usize>,
@@ -405,11 +432,13 @@ pub(super) fn restore_column_cursor(column: &ColumnView, position: u32) {
     let generations = column.cursor_restore_generation.clone();
     let generation = generations.get().wrapping_add(1);
     generations.set(generation);
+    // Recursive hits that replaced the rows since keep their own cursor.
+    let hits = column.recursive_search_active.clone();
     glib::idle_add_local_once(move || {
         let Some(list) = list.upgrade() else { return };
         let frames = Cell::new(0u8);
         list.add_tick_callback(move |list, _| {
-            if generations.get() != generation {
+            if generations.get() != generation || hits.get() {
                 return glib::ControlFlow::Break;
             }
             let focused = list.root().and_then(|root| root.focus());
@@ -534,8 +563,8 @@ pub(super) fn set_active_path_style(row: &gtk::Box, active: bool, immediate: boo
     }
 }
 
-pub(super) fn set_cut_path_style(row: &gtk::Box, cut: bool) {
-    if cut {
+pub(super) fn set_mark_path_style(row: &gtk::Box, mark: super::clipboard::ClipboardMark) {
+    if mark == super::clipboard::ClipboardMark::Cut {
         row.add_css_class("cut");
     } else {
         row.remove_css_class("cut");
@@ -544,7 +573,7 @@ pub(super) fn set_cut_path_style(row: &gtk::Box, cut: bool) {
         .first_child()
         .and_downcast::<crate::ui::thumbnail::ThumbnailSlot>()
     {
-        icon.set_cut(cut);
+        icon.set_mark(mark);
     }
 }
 
@@ -1041,6 +1070,9 @@ impl ViewState {
                         &filtered_model_for_search,
                         &model_for_search,
                     );
+                    if let Some(state) = weak_state_for_search.upgrade() {
+                        state.notify_filter_results_changed();
+                    }
                     return;
                 }
                 let Some(state) = weak_state_for_search.upgrade() else {
@@ -1065,6 +1097,7 @@ impl ViewState {
                         &filter_query_for_search,
                         fold_for_search(&text),
                     );
+                    state.notify_filter_results_changed();
                     return;
                 };
                 *filter_query_for_search.borrow_mut() = fold_for_search(&text);
@@ -1116,6 +1149,7 @@ impl ViewState {
                         if search::update_results(&sm, &results, &selection, &syncing, items) {
                             state.notify_search_selection_changed();
                         }
+                        state.notify_filter_results_changed();
                     }),
                 );
             },
