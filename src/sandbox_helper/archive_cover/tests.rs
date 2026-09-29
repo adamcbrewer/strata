@@ -38,13 +38,13 @@ fn epub_two_and_three_resolve_declared_covers() {
     let container =
         br#"<container><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>"#;
     let image = image();
-    for (opf, cover) in [
+    for (package_xml, cover) in [
         (br#"<package><metadata><meta name="cover" content="art"/></metadata><manifest><item id="art" href="../Images/cover.png" media-type="image/png"/></manifest></package>"#.as_slice(), "Images/cover.png"),
         (br#"<package><manifest><item id="art" href="cover.png" media-type="image/png" properties="nav cover-image"/></manifest></package>"#.as_slice(), "OPS/cover.png"),
         (br#"<package><metadata><meta name="cover" content="art"/></metadata><manifest><item id="art" href="OPS/images/cover.png" media-type="image/png"/></manifest></package>"#.as_slice(), "OPS/images/cover.png"),
         (br#"<package><manifest><item id="art" href="cover%20art.png" media-type="image/png" properties="cover-image"/></manifest></package>"#.as_slice(), "OPS/cover art.png"),
     ] {
-        package(&path, &[("META-INF/container.xml", container), ("OPS/book.opf", opf), (cover, &image)]);
+        package(&path, &[("META-INF/container.xml", container), ("OPS/book.opf", package_xml), (cover, &image)]);
         let png = thumbnail(&path, CoverFormat::Epub).expect("declared cover");
         assert_eq!(crate::sandbox::png_dimensions(&png), Some((32, 48)));
     }
@@ -55,11 +55,11 @@ fn epub_does_not_guess_undeclared_images_or_escape_the_package() {
     let dir = tempfile::tempdir().expect("directory");
     let path = dir.path().join("book.epub");
     let container = br#"<container><rootfile full-path="OPS/book.opf"/></container>"#;
-    for opf in [
+    for package_xml in [
         br#"<package><manifest><item id="art" href="cover.png" media-type="image/png"/></manifest></package>"#.as_slice(),
         br#"<package><manifest><item id="art" href="../../cover.png" media-type="image/png" properties="cover-image"/></manifest></package>"#.as_slice(),
     ] {
-        package(&path, &[("META-INF/container.xml", container), ("OPS/book.opf", opf), ("OPS/cover.png", &image())]);
+        package(&path, &[("META-INF/container.xml", container), ("OPS/book.opf", package_xml), ("OPS/cover.png", &image())]);
         assert!(thumbnail(&path, CoverFormat::Epub).is_err());
     }
 }

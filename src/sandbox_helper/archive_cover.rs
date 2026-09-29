@@ -204,13 +204,13 @@ fn cover_href(xml: &[u8]) -> Result<String, String> {
 
 fn epub_cover(archive: &mut zip::ZipArchive<fs::File>) -> Result<String, String> {
     let container = read_member(archive, "META-INF/container.xml", MAX_XML_BYTES)?;
-    let opf = rootfile(&container)?;
-    let opf = normalize_path("", &opf).ok_or("Invalid EPUB package path")?;
-    let xml = read_member(archive, &opf, MAX_XML_BYTES)?;
+    let package_path = rootfile(&container)?;
+    let package_path = normalize_path("", &package_path).ok_or("Invalid EPUB package path")?;
+    let xml = read_member(archive, &package_path, MAX_XML_BYTES)?;
     let href = cover_href(&xml)?;
-    let base = opf.rsplit_once('/').map_or("", |(base, _)| base);
+    let base = package_path.rsplit_once('/').map_or("", |(base, _)| base);
     let relative = normalize_path(base, &href).ok_or("Invalid EPUB cover path")?;
-    // Some EPUB 2 generators place a root-relative href in a nested OPF.
+    // Some EPUB 2 generators place a root-relative href in a nested package document.
     if archive.file_names().any(|name| name == relative) {
         return Ok(relative);
     }
