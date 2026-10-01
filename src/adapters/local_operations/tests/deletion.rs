@@ -288,6 +288,70 @@ fn other_deletion_failures_keep_the_raw_error() {
 }
 
 #[test]
+fn provider_cleans_only_confirmed_pins_on_failure_and_cancellation() {
+    crate::test_support::gtk_test(
+        "adapters::local_operations::tests::deletion::provider_cleans_only_confirmed_pins_on_failure_and_cancellation",
+        || {
+            for cancel_after_first in [false, true] {
+                let directory = tempfile::tempdir().expect("fixture");
+                let first = directory.path().join("first");
+                let second = directory.path().join("second");
+                fs::create_dir(&first).expect("first folder");
+                if cancel_after_first {
+                    fs::create_dir(&second).expect("second folder");
+                }
+                let bookmarks = crate::adapters::bookmarks::pinned_places_path();
+                fs::create_dir_all(bookmarks.parent().expect("bookmarks directory"))
+                    .expect("config");
+                let pin = |path: &Path| format!("{} Pin\n", gio::File::for_path(path).uri());
+                fs::write(&bookmarks, format!("{}{}", pin(&first), pin(&second))).expect("pins");
+                let events = Rc::new(RefCell::new(Vec::new()));
+                let emitted = events.clone();
+                let operation = Rc::new(RefCell::new(None::<LoadHandle>));
+                let cancelling = operation.clone();
+                operation.replace(Some(LocalOperationProvider.delete(
+                    DeleteRequest {
+                        id: OperationRequestId(1372),
+                        entries: vec![directory_entry(&first), directory_entry(&second)],
+                        permanent: true,
+                    },
+                    Rc::new(move |event| {
+                        if cancel_after_first
+                            && matches!(event, OperationEvent::DeleteProgress { completed: 1, .. })
+                        {
+                            cancelling.borrow_mut().take();
+                        }
+                        emitted.borrow_mut().push(event);
+                    }),
+                )));
+                let context = glib::MainContext::default();
+                while !events.borrow().iter().any(|event| {
+                    matches!(
+                        event,
+                        OperationEvent::Cancelled { .. }
+                            | OperationEvent::CompletedWithErrors { .. }
+                    )
+                }) {
+                    context.iteration(true);
+                }
+                assert_eq!(
+                    fs::read_to_string(&bookmarks).expect("remaining pins"),
+                    pin(&second)
+                );
+                let events = events.borrow();
+                if cancel_after_first {
+                    assert!(events.iter().any(|event| matches!(event, OperationEvent::Cancelled { result, .. } if result.completed == [Location::local(&first)] && result.not_attempted == [Location::local(&second)])));
+                    assert!(second.exists());
+                } else {
+                    assert!(events.iter().any(|event| matches!(event, OperationEvent::CompletedWithErrors { deleted_locations, .. } if deleted_locations == &[Location::local(&first)])));
+                }
+                assert!(!first.exists());
+            }
+        },
+    );
+}
+
+#[test]
 fn cancelling_between_deletions_reports_completed_and_unattempted_items()
 -> Result<(), Box<dyn Error>> {
     let _serial = ASYNC_MAIN_CONTEXT_DEFAULT

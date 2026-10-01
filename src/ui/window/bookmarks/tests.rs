@@ -1,50 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-use super::*;
+use std::{cell::RefCell, rc::Rc};
 
-#[test]
-fn deleted_pins_and_descendants_are_removed_without_rewriting_other_entries() {
-    let contents = b"file:///fixture/gone Gone\r\n\
-        file:///fixture/gone/child Child\n\
-        file:///fixture/gone%20too Keep\n\
-        file:///fixture/gone-sibling Sibling\n\
-        file:///disconnected/drive Offline\n\
-        smb://unavailable/share Network\n\
-        file:///fixture/keep Raw\xff\r\n\
-        \xffinvalid\n\n\
-        file:///fixture/final No newline";
-    let expected = b"file:///fixture/gone%20too Keep\n\
-        file:///fixture/gone-sibling Sibling\n\
-        file:///disconnected/drive Offline\n\
-        smb://unavailable/share Network\n\
-        file:///fixture/keep Raw\xff\r\n\
-        \xffinvalid\n\n\
-        file:///fixture/final No newline";
-    let deleted = [gio::File::for_path("/fixture/gone")];
-    assert_eq!(retain_unrelated_bookmarks(contents, &deleted), expected);
-    assert_eq!(retain_unrelated_bookmarks(contents, &[]), contents);
-}
+use gtk::glib;
 
-#[test]
-fn cleanup_reads_current_bookmarks_and_leaves_missing_files_absent() {
-    let directory = tempfile::tempdir().expect("fixture");
-    let path = directory.path().join("bookmarks");
-    let file = gio::File::for_path(&path);
-    let deleted = [Location::local("/fixture/gone")];
-    remove_deleted_pins(&file, &deleted).expect("missing bookmarks");
-    assert!(!path.exists());
-    std::fs::write(&path, b"file:///fixture/gone Gone\n").expect("initial pins");
-    std::fs::write(
-        &path,
-        b"file:///fixture/gone Gone\nfile:///fixture/added External\xff\n",
-    )
-    .expect("external edit");
-    remove_deleted_pins(&file, &deleted).expect("cleanup");
-    assert_eq!(
-        std::fs::read(&path).expect("saved bookmarks"),
-        b"file:///fixture/added External\xff\n"
-    );
-}
+use super::super::load_pinned_places;
+use crate::model::Location;
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -134,5 +95,40 @@ fn trash_and_restore_do_not_resurrect_removed_pins() {
     crate::test_support::gtk_test(
         "ui::window::bookmarks::tests::trash_and_restore_do_not_resurrect_removed_pins",
         || deletion_updates_both_sidebars(false),
+    );
+}
+
+#[test]
+fn deletion_updates_surviving_sidebars_after_the_origin_disconnects() {
+    crate::test_support::gtk_test(
+        "ui::window::bookmarks::tests::deletion_updates_surviving_sidebars_after_the_origin_disconnects",
+        || {
+            let directory = tempfile::tempdir().expect("fixture");
+            let gone = directory.path().join("gone");
+            std::fs::create_dir(&gone).expect("folder");
+            let pins = vec![(Location::local(&gone), "Gone".into())];
+            super::super::save_pinned_places(&pins).expect("pins");
+            let preferences = crate::ui::preferences::PreferenceManager::shared();
+            let first = super::super::browser_for_window();
+            let second = super::super::browser_for_window();
+            let origin = super::super::build_sidebar(first.clone(), preferences.clone(), true);
+            let surviving = super::super::build_sidebar(second, preferences, true);
+            let browser = first.browser();
+            browser.navigate(Location::local(directory.path()));
+            wait_until(|| {
+                browser
+                    .column_snapshot(0)
+                    .is_some_and(|column| !column.loading)
+            });
+            browser.select(0, 0);
+            let entries = browser.selected_entries();
+            assert_eq!(entries.len(), 1);
+            browser.clear_observer();
+            origin.disconnect();
+            browser.delete(entries, true);
+            wait_until(|| !gone.exists() && surviving.state.pinned_places.borrow().is_empty());
+            assert!(load_pinned_places().expect("saved pins").is_empty());
+            assert_eq!(*origin.state.pinned_places.borrow(), pins);
+        },
     );
 }

@@ -32,7 +32,7 @@ pub(in crate::ui) fn build_sidebar(
         shell.update_label.clone(),
     );
     state.bind_order();
-    super::bookmarks::register_sidebar(&state);
+    let bookmark_watch = super::bookmarks::watch_sidebar(&state);
     state.observe_navigation_and_trash();
     let (handlers, mount_handler) = connect_device_changes(&state);
     let recent_setting_handler = connect_recent_setting_changes(&state);
@@ -57,6 +57,7 @@ pub(in crate::ui) fn build_sidebar(
         mount_handler: RefCell::new(Some(mount_handler)),
         recent_setting_handler: RefCell::new(recent_setting_handler),
         release_watch,
+        bookmark_watch: RefCell::new(Some(bookmark_watch)),
     }
 }
 
@@ -213,30 +214,14 @@ impl SidebarState {
     fn observe_navigation_and_trash(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         self.browser.observe(move |event| {
-            if let crate::app::BrowserEvent::LocationsDeleted { locations } = event {
-                if let Some(state) = weak.upgrade() {
-                    match super::bookmarks::remove_deleted_pins(
-                        &gio::File::for_path(super::pinned_places_path()),
-                        locations,
-                    ) {
-                        Ok(()) => super::bookmarks::refresh_sidebars(),
-                        Err(error) => super::show_error_dialog(
-                            &state.view.widget(),
-                            "Unable to update pinned folders",
-                            &error.to_string(),
-                        ),
-                    }
-                }
+            let Some(state) = weak.upgrade() else {
                 return;
-            }
+            };
             let changes_active_place = Self::event_changes_active_place(event);
             let changes_trash = event_changes_trash_contents(event);
             if !changes_active_place && !changes_trash {
                 return;
             }
-            let Some(state) = weak.upgrade() else {
-                return;
-            };
             if changes_active_place {
                 state.sync_active_place();
             }
