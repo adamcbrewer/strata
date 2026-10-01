@@ -18,27 +18,60 @@ fn sidebar_folder_customization_loads_and_updates_across_windows() {
             let directory = tempfile::tempdir().expect("pinned folder");
             let path = directory.path();
             let location = Location::local(path);
+            let home = gtk::glib::home_dir();
+            let downloads = home.join("Downloads");
+            std::fs::create_dir_all(&downloads).expect("Downloads fixture");
+            std::fs::create_dir_all(gtk::glib::user_config_dir()).expect("config fixture");
+            std::fs::write(
+                gtk::glib::user_config_dir().join("user-dirs.dirs"),
+                "XDG_DOWNLOAD_DIR=\"$HOME/Downloads\"\n",
+            )
+            .expect("XDG directories fixture");
+            gtk::glib::reload_user_special_dirs_cache();
+            assert_eq!(
+                gtk::glib::user_special_dir(gtk::glib::UserDirectory::Downloads),
+                Some(downloads.clone())
+            );
+            let cases = [
+                (location.clone(), icons::FOLDER),
+                (Location::local(&home), icons::HOME),
+                (Location::local(&downloads), icons::DOWNLOADS),
+            ];
             super::super::save_pinned_places(&[(location.clone(), "Custom folder".into())])
                 .expect("save pin");
-            write_settings(&format!(
-                "[folder_colors]\n\"{}\" = \"red\"\n[custom_icons]\n\"{}\" = \"{}\"\n",
-                path.display(),
-                path.display(),
-                icons::PICTURES,
-            ));
+            let mut settings = String::from("[folder_colors]\n");
+            for (location, _) in &cases {
+                settings.push_str(&format!("\"{}\" = \"red\"\n", location.display_path()));
+            }
+            settings.push_str("[custom_icons]\n");
+            for (location, _) in &cases {
+                settings.push_str(&format!(
+                    "\"{}\" = \"{}\"\n",
+                    location.display_path(),
+                    icons::PICTURES,
+                ));
+            }
+            write_settings(&settings);
             let manager = PreferenceManager::shared();
             let first = OpenWindow::open();
             let second = OpenWindow::open();
-            let sidebar_image = |open: &OpenWindow| {
-                let row = open
-                    .content
-                    .sidebar
-                    .state
+            let local_sidebar = super::super::sidebar::build_sidebar(
+                first.content.browser.clone(),
+                manager.clone(),
+                true,
+            );
+            let sidebars = [
+                first.content.sidebar.state.clone(),
+                second.content.sidebar.state.clone(),
+                local_sidebar.state.clone(),
+            ];
+            let sidebar_image = |state: &super::super::SidebarState, location: &Location| {
+                let row = state
                     .place_rows
                     .borrow()
                     .iter()
-                    .find(|(candidate, _)| candidate == &location)
-                    .expect("pinned row")
+                    .find(|(candidate, _)| candidate == location)
+                    .expect("folder row")
                     .1
                     .clone();
                 row.child()
@@ -46,54 +79,89 @@ fn sidebar_folder_customization_loads_and_updates_across_windows() {
                     .and_downcast::<gtk::Image>()
                     .expect("folder icon")
             };
-            let assert_icons = |expected: gtk::gdk::Texture| {
-                for open in [&first, &second] {
-                    let actual = sidebar_image(open)
+            let assert_icons = |location: &Location, expected: gtk::gdk::Texture| {
+                for state in &sidebars {
+                    let actual = sidebar_image(state, location)
                         .paintable()
                         .expect("rendered icon")
                         .downcast::<gtk::gdk::Texture>()
                         .expect("icon texture");
                     assert!(
                         texture_pixels(&actual) == texture_pixels(&expected),
-                        "sidebar icon differs from expected folder customization"
+                        "sidebar icon differs from expected folder customization: {}",
+                        location.display_path()
                     );
                 }
             };
-            assert_icons(
-                assets::folder_decoration_paintable(
-                    icons::PICTURES,
-                    manager.folder_color(path).expect("saved color").hex(),
-                )
-                .expect("decorated folder"),
-            );
-            first.content.sidebar.state.set_rail(true);
-            second.content.sidebar.state.set_rail(true);
-            manager.set_folder_color(path, Some(FolderColorValue::Custom("#123456".into())));
-            assert_icons(
-                assets::folder_decoration_paintable(icons::PICTURES, "#123456")
-                    .expect("recolored folder"),
-            );
-            manager.set_custom_icon(path, Some("emoji:🚀"));
-            assert_icons(
-                assets::folder_decoration_paintable("emoji:🚀", "#123456").expect("emoji folder"),
-            );
-            manager.clear_item_customization(path);
-            assert_icons(assets::primary_icon_paintable(icons::FOLDER).expect("default folder"));
+            for (location, _) in &cases {
+                assert_icons(
+                    location,
+                    assets::folder_decoration_paintable(
+                        icons::PICTURES,
+                        manager
+                            .folder_color(location.native_path().expect("folder path"))
+                            .expect("saved color")
+                            .hex(),
+                    )
+                    .expect("decorated folder"),
+                );
+            }
+            for state in &sidebars {
+                state.set_rail(true);
+            }
+            for (location, fallback) in &cases {
+                let path = location.native_path().expect("folder path");
+                manager.set_folder_color(path, Some(FolderColorValue::Custom("#123456".into())));
+                assert_icons(
+                    location,
+                    assets::folder_decoration_paintable(icons::PICTURES, "#123456")
+                        .expect("recolored folder"),
+                );
+                manager.set_custom_icon(path, Some("emoji:🚀"));
+                assert_icons(
+                    location,
+                    assets::folder_decoration_paintable("emoji:🚀", "#123456")
+                        .expect("emoji folder"),
+                );
+                manager.clear_item_customization(path);
+                assert_icons(
+                    location,
+                    assets::primary_icon_paintable(fallback).expect("default folder"),
+                );
+                manager.set_folder_color(path, Some(FolderColorValue::Custom("#123456".into())));
+                assert_icons(
+                    location,
+                    assets::custom_colored_icon_paintable(fallback, "#123456")
+                        .expect("color-only folder"),
+                );
+                manager.clear_item_customization(path);
+            }
+            for state in &sidebars {
+                state.set_rail(false);
+                state.rebuild();
+            }
             for open in [&first, &second] {
-                open.content.sidebar.state.set_rail(false);
-                open.content.sidebar.state.rebuild();
                 assert!(settings_closed(open));
             }
-            manager.set_custom_icon(path, Some(icons::KEY));
-            assert_icons(
-                assets::folder_decoration_paintable(icons::KEY, &assets::primary_icon_color())
-                    .expect("rebuilt folder decoration"),
-            );
+            for (location, _) in &cases {
+                manager.set_custom_icon(
+                    location.native_path().expect("folder path"),
+                    Some(icons::KEY),
+                );
+                assert_icons(
+                    location,
+                    assets::folder_decoration_paintable(icons::KEY, &assets::primary_icon_color())
+                        .expect("rebuilt folder decoration"),
+                );
+            }
             crate::ui::theme::ThemeManager::shared().select_theme("dracula");
-            assert_icons(
-                assets::folder_decoration_paintable(icons::KEY, &assets::primary_icon_color())
-                    .expect("theme-colored folder"),
-            );
+            for (location, _) in &cases {
+                assert_icons(
+                    location,
+                    assets::folder_decoration_paintable(icons::KEY, &assets::primary_icon_color())
+                        .expect("theme-colored folder"),
+                );
+            }
             let row = first
                 .content
                 .sidebar
@@ -121,6 +189,7 @@ fn sidebar_folder_customization_loads_and_updates_across_windows() {
                     .is_empty()
             );
             label_named(first.content.overlay().upcast_ref(), "Customize Folder");
+            local_sidebar.disconnect();
         },
     );
 }

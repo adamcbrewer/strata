@@ -1973,6 +1973,7 @@ impl SidebarState {
         location: Location,
     ) -> gtk::Button {
         let row = sidebar_button(icon, name);
+        customize_sidebar_folder_icon(&row, &location, icon);
         crate::ui::accessibility::set_description(&row, Some(&location.display_path()));
         self.bind_place_row(&row, location.clone(), PlaceNavigation::Direct);
         self.attach_place_context_menu(&row, location, move |state| {
@@ -2430,14 +2431,7 @@ impl SidebarState {
 
     fn append_place(&self, icon: &str, name: &str, location: Location) -> gtk::Button {
         let row = self.append_device_place(icon, name, location.clone(), None);
-        if let Some(path) = location.native_path()
-            && let Some(image) = row
-                .child()
-                .and_then(|content| content.first_child())
-                .and_downcast::<gtk::Image>()
-        {
-            super::thumbnail::show_customized_icon_image(&image, path, icon, image.pixel_size());
-        }
+        customize_sidebar_folder_icon(&row, &location, icon);
         row
     }
 
@@ -3621,6 +3615,17 @@ fn sidebar_context_option(icon: &str, label: &str, danger: bool) -> gtk::Button 
     row.append(&title);
     button.set_child(Some(&row));
     button
+}
+
+fn customize_sidebar_folder_icon(row: &gtk::Button, location: &Location, icon: &str) {
+    if let Some(path) = location.native_path()
+        && let Some(image) = row
+            .child()
+            .and_then(|content| content.first_child())
+            .and_downcast::<gtk::Image>()
+    {
+        super::thumbnail::show_customized_folder_image(&image, path, icon, image.pixel_size());
+    }
 }
 
 fn sidebar_button(icon: &str, name: &str) -> gtk::Button {
