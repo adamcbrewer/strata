@@ -3,6 +3,75 @@
 use super::*;
 
 #[test]
+fn deletion_outcomes_publish_only_confirmed_removed_locations() {
+    let request_id = OperationRequestId(1372);
+    let removed = Location::local("/fixture/removed");
+    let failed = Location::local("/fixture/failed");
+    for (event, expected) in [
+        (
+            OperationEvent::Deleted {
+                request_id,
+                locations: vec![removed.clone()],
+            },
+            vec![removed.clone()],
+        ),
+        (
+            OperationEvent::CompletedWithErrors {
+                request_id,
+                deleted_locations: vec![removed.clone()],
+                retryable_locations: vec![failed.clone()],
+                has_non_retryable_failures: false,
+                message: "failed".into(),
+            },
+            vec![removed.clone()],
+        ),
+        (
+            OperationEvent::Failed {
+                request_id,
+                message: "failed".into(),
+            },
+            Vec::new(),
+        ),
+        (
+            OperationEvent::Cancelled {
+                request_id,
+                result: crate::services::CancelledOperation {
+                    not_attempted: vec![failed.clone()],
+                    ..Default::default()
+                },
+            },
+            Vec::new(),
+        ),
+        (
+            OperationEvent::Cancelled {
+                request_id,
+                result: crate::services::CancelledOperation {
+                    completed: vec![removed.clone()],
+                    failed: vec![failed.clone()],
+                    not_attempted: vec![Location::local("/fixture/untouched")],
+                    ..Default::default()
+                },
+            },
+            vec![removed],
+        ),
+    ] {
+        let browser = Browser::new(Rc::new(FakeFileSource));
+        browser.current_operation.set(Some(request_id));
+        browser.deletion_operation.set(true);
+        browser.deletion_permanent.set(true);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let observed = events.clone();
+        browser.observe(move |event| {
+            if let BrowserEvent::LocationsDeleted { locations } = event {
+                observed.borrow_mut().extend(locations.iter().cloned());
+            }
+        });
+        browser.operation_callback(request_id, false, HashSet::new())(event);
+        assert_eq!(*events.borrow(), expected);
+    }
+}
+
+#[test]
 fn deleted_trash_entries_refresh_the_trash_root() {
     let entry = FileEntry {
         location: Location::uri("trash:///photo.jpg"),

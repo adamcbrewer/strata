@@ -599,7 +599,7 @@ impl ViewState {
                 self.refresh_destination_style();
                 self.mirror_focused_folder(*depth, *position);
             }
-            BrowserEvent::PreviewRequested { .. } => {}
+            BrowserEvent::PreviewRequested { .. } | BrowserEvent::LocationsDeleted { .. } => {}
             BrowserEvent::ExtractRequested { entry } => {
                 if self.interactive {
                     self.extract_entry(entry.clone());

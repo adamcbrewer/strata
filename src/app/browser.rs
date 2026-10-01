@@ -206,6 +206,9 @@ pub enum BrowserEvent {
     DeletionFinished {
         succeeded: bool,
     },
+    LocationsDeleted {
+        locations: Vec<Location>,
+    },
     RestorationStarted {
         total: usize,
     },

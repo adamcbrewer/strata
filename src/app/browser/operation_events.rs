@@ -276,6 +276,19 @@ impl Browser {
         completion.record_trash_undo(&event);
         self.finish_transfer(&mut completion, &event);
         if completion.deleting {
+            let locations: &[Location] = match &event {
+                OperationEvent::Deleted { locations, .. } => locations,
+                OperationEvent::CompletedWithErrors {
+                    deleted_locations, ..
+                } => deleted_locations,
+                OperationEvent::Cancelled { result, .. } => &result.completed,
+                _ => &[],
+            };
+            if !locations.is_empty() {
+                self.emit(BrowserEvent::LocationsDeleted {
+                    locations: locations.to_vec(),
+                });
+            }
             self.emit(BrowserEvent::DeletionFinished {
                 succeeded: matches!(&event, OperationEvent::Deleted { .. }),
             });

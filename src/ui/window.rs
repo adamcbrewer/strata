@@ -35,6 +35,7 @@ use super::{
     preferences::PreferenceManager,
 };
 
+mod bookmarks;
 mod composition;
 mod device_release;
 mod devices;
