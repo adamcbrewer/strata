@@ -114,3 +114,41 @@ fn cleanup_stops_on_repeated_conflicts_and_other_write_errors() {
         }
     }
 }
+
+#[test]
+fn deleting_symlink_paths_preserves_pins_to_their_targets() {
+    let directory = tempfile::tempdir().expect("fixture");
+    let target = directory.path().join("outside");
+    let link = directory.path().join("link");
+    std::fs::create_dir(&target).expect("target");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    let pin = |path: &std::path::Path| format!("{} Pin\n", gio::File::for_path(path).uri());
+    let contents = format!("{}{}{}", pin(&link), pin(&link.join("child")), pin(&target));
+    assert_eq!(
+        retain_unrelated_bookmarks(contents.as_bytes(), &[gio::File::for_path(&link)]),
+        pin(&target).as_bytes()
+    );
+}
+
+#[test]
+fn non_utf8_native_paths_match_their_percent_encoded_pins() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = tempfile::tempdir().expect("fixture");
+    let target = directory.path().join("keep");
+    let pin = |path: &std::path::Path| format!("{} Pin\n", gio::File::for_path(path).uri());
+    let raw = Location::local(
+        directory
+            .path()
+            .join(std::ffi::OsStr::from_bytes(b"gone\xff")),
+    );
+    let contents = format!(
+        "{} Pin\n{}",
+        gio_file_for_location(&raw).uri(),
+        pin(&target)
+    );
+    assert_eq!(
+        retain_unrelated_bookmarks(contents.as_bytes(), &[gio_file_for_location(&raw)]),
+        pin(&target).as_bytes()
+    );
+}
