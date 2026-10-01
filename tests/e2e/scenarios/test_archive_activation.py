@@ -35,8 +35,11 @@ def extract_archive(strata, archive_name, activation):
     list_file_clicks=2, grid_file_clicks=2, explorer_file_clicks=2,
 )
 @pytest.mark.parametrize("format,activation", [
-    ("zip", "keyboard"), ("zip", "double-click"),
-    ("tar.gz", "keyboard"), ("tar.gz", "double-click"),
+    pytest.param("zip", "keyboard", marks=pytest.mark.preferences(browser_mode="list")),
+    pytest.param("zip", "keyboard", marks=pytest.mark.preferences(browser_mode="icons")),
+    ("zip", "double-click"),
+    pytest.param("tar.gz", "keyboard", marks=pytest.mark.preferences(browser_mode="list")),
+    ("tar.gz", "double-click"),
     ("zip", "Extract here"), ("zip", "Extract to…"),
 ])
 def test_archive_activation_extracts_to_subfolder(strata, activation, format):

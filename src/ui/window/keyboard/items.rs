@@ -64,8 +64,25 @@ impl Dispatcher {
                 | Modifiers::SUPER_MASK
                 | Modifiers::SHIFT_MASK,
         ) || event.text_has_focus()
-            || (!self.view.item_view_has_focus()
-                && !self.preview.archive_list_has_focus(event.focused.as_ref()))
+        {
+            return None;
+        }
+        if self.view.item_view_has_focus() && self.view.view_mode() == BrowserMode::Columns {
+            if matches!(
+                event.key,
+                Key::Right | Key::Return | Key::KP_Enter | Key::space
+            ) && self.view.browser().focused_entry().is_some_and(|entry| {
+                !entry.is_directory()
+                    && entry.location.native_path().is_some()
+                    && crate::services::archive_preview_format(&entry.native_name).is_some()
+            }) {
+                self.enter_preview(&self.view.browser());
+                return Some(Propagation::Stop);
+            }
+            return None;
+        }
+        if !self.view.item_view_has_focus()
+            && !self.preview.archive_list_has_focus(event.focused.as_ref())
         {
             return None;
         }

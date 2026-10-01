@@ -4677,12 +4677,6 @@ textview > popover.menu button.model:focus-visible,
   outline-offset: -1px;
 }
 
-/* The archive preview shows its own cursor; the listing keeps only the selection fill. */
-.keyboard-navigation.archive-preview .file-list:focus-within .file-row.keyboard-cursor:not(.filter-result),
-.keyboard-navigation.archive-preview .file-list row:focus-within .file-row.filter-result {
-  outline: none;
-}
-
 .directory-column:not(:focus-within) .file-list:not(.context-selection) row:selected,
 .file-list-mode:not(:focus-within):not(.context-selection) row:selected {
   background: alpha(@theme_accent, 0.08);
