@@ -8,6 +8,131 @@ use crate::ui::preferences::PreferenceManager;
 use crate::ui::tenxer_mode::UNUSED_SUBTITLE;
 
 #[test]
+fn sidebar_folder_customization_loads_and_updates_across_windows() {
+    gtk_test(
+        "ui::window::tests::preferences::sidebar_folder_customization_loads_and_updates_across_windows",
+        || {
+            use crate::assets::{self, icons};
+            use crate::model::{FolderColorValue, Location};
+
+            let directory = tempfile::tempdir().expect("pinned folder");
+            let path = directory.path();
+            let location = Location::local(path);
+            super::super::save_pinned_places(&[(location.clone(), "Custom folder".into())])
+                .expect("save pin");
+            write_settings(&format!(
+                "[folder_colors]\n\"{}\" = \"red\"\n[custom_icons]\n\"{}\" = \"{}\"\n",
+                path.display(),
+                path.display(),
+                icons::PICTURES,
+            ));
+            let manager = PreferenceManager::shared();
+            let first = OpenWindow::open();
+            let second = OpenWindow::open();
+            let sidebar_image = |open: &OpenWindow| {
+                let row = open
+                    .content
+                    .sidebar
+                    .state
+                    .place_rows
+                    .borrow()
+                    .iter()
+                    .find(|(candidate, _)| candidate == &location)
+                    .expect("pinned row")
+                    .1
+                    .clone();
+                row.child()
+                    .and_then(|content| content.first_child())
+                    .and_downcast::<gtk::Image>()
+                    .expect("folder icon")
+            };
+            let assert_icons = |expected: gtk::gdk::Texture| {
+                for open in [&first, &second] {
+                    let actual = sidebar_image(open)
+                        .paintable()
+                        .expect("rendered icon")
+                        .downcast::<gtk::gdk::Texture>()
+                        .expect("icon texture");
+                    assert!(
+                        texture_pixels(&actual) == texture_pixels(&expected),
+                        "sidebar icon differs from expected folder customization"
+                    );
+                }
+            };
+            assert_icons(
+                assets::folder_decoration_paintable(
+                    icons::PICTURES,
+                    manager.folder_color(path).expect("saved color").hex(),
+                )
+                .expect("decorated folder"),
+            );
+            first.content.sidebar.state.set_rail(true);
+            second.content.sidebar.state.set_rail(true);
+            manager.set_folder_color(path, Some(FolderColorValue::Custom("#123456".into())));
+            assert_icons(
+                assets::folder_decoration_paintable(icons::PICTURES, "#123456")
+                    .expect("recolored folder"),
+            );
+            manager.set_custom_icon(path, Some("emoji:🚀"));
+            assert_icons(
+                assets::folder_decoration_paintable("emoji:🚀", "#123456").expect("emoji folder"),
+            );
+            manager.clear_item_customization(path);
+            assert_icons(assets::primary_icon_paintable(icons::FOLDER).expect("default folder"));
+            for open in [&first, &second] {
+                open.content.sidebar.state.set_rail(false);
+                open.content.sidebar.state.rebuild();
+                assert!(settings_closed(open));
+            }
+            manager.set_custom_icon(path, Some(icons::KEY));
+            assert_icons(
+                assets::folder_decoration_paintable(icons::KEY, &assets::primary_icon_color())
+                    .expect("rebuilt folder decoration"),
+            );
+            crate::ui::theme::ThemeManager::shared().select_theme("dracula");
+            assert_icons(
+                assets::folder_decoration_paintable(icons::KEY, &assets::primary_icon_color())
+                    .expect("theme-colored folder"),
+            );
+            let row = first
+                .content
+                .sidebar
+                .state
+                .place_rows
+                .borrow()
+                .iter()
+                .find(|(candidate, _)| candidate == &location)
+                .expect("rebuilt pin")
+                .1
+                .clone();
+            walk(row.upcast_ref(), &mut |widget| {
+                if let Some(popover) = widget.downcast_ref::<gtk::Popover>() {
+                    popover.popup();
+                }
+            });
+            settle();
+            let customize = label_named(row.upcast_ref(), "Customize…")
+                .ancestor(gtk::Button::static_type())
+                .and_downcast::<gtk::Button>()
+                .expect("customize action");
+            customize.emit_clicked();
+            assert!(
+                !class_in_shown_pane(first.content.overlay().upcast_ref(), "customize-dialog")
+                    .is_empty()
+            );
+            label_named(first.content.overlay().upcast_ref(), "Customize Folder");
+        },
+    );
+}
+
+fn texture_pixels(texture: &gtk::gdk::Texture) -> Vec<u8> {
+    let stride = texture.width() as usize * 4;
+    let mut pixels = vec![0; stride * texture.height() as usize];
+    texture.download(&mut pixels, stride);
+    pixels
+}
+
+#[test]
 fn default_chrome_stays_operable_without_a_saved_tenxer_mode() {
     gtk_test(
         "ui::window::tests::preferences::default_chrome_stays_operable_without_a_saved_tenxer_mode",

@@ -37,6 +37,7 @@ mod collection;
 mod columns;
 pub(super) mod context_menu;
 mod customization;
+pub(super) use customization::show_customize_modal;
 mod desktop;
 mod destination;
 mod dissolve_delete;

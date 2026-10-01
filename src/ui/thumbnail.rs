@@ -46,6 +46,8 @@ thread_local! {
     static SETTLE_VIEWS: RefCell<HashMap<usize, ViewSettle>> = RefCell::new(HashMap::new());
     static TRACKED_CUSTOMIZED_ICONS: RefCell<HashMap<usize, TrackedCustomizedIcon>> =
         RefCell::new(HashMap::new());
+    static TRACKED_CUSTOMIZED_IMAGES: RefCell<HashMap<usize, TrackedCustomizedImage>> =
+        RefCell::new(HashMap::new());
     static TRACKED_THUMBNAILS: RefCell<HashMap<usize, TrackedThumbnail>> = RefCell::new(HashMap::new());
     static REFRESHING_CUSTOMIZED_ICONS: Cell<bool> = const { Cell::new(false) };
 }
@@ -59,6 +61,12 @@ struct TrackedCustomizedIcon {
     path: PathBuf,
     icon: String,
     customized: bool,
+}
+
+struct TrackedCustomizedImage {
+    image: glib::WeakRef<gtk::Image>,
+    path: PathBuf,
+    icon: String,
 }
 
 struct ActiveRequest {
@@ -1173,6 +1181,17 @@ pub(super) fn show_customized_icon_image(
         image.set_size_request(size, size);
     }
     apply_path_customization_image(image, path, fallback_icon);
+    TRACKED_CUSTOMIZED_IMAGES.with_borrow_mut(|images| {
+        images.retain(|_, tracked| tracked.image.upgrade().is_some());
+        images.insert(
+            image.as_ptr() as usize,
+            TrackedCustomizedImage {
+                image: image.downgrade(),
+                path: path.to_path_buf(),
+                icon: fallback_icon.to_owned(),
+            },
+        );
+    });
 }
 
 pub(super) fn cancel_list_item_thumbnails(item: &glib::Object) {
@@ -1309,10 +1328,32 @@ fn register_tracked_icon(image: &ThumbnailSlot, path: &Path, icon: &str, customi
 
 pub(super) fn refresh_customized_icons(paths: &[PathBuf]) {
     refresh_tracked_icons(|tracked| paths.iter().any(|candidate| candidate == &tracked.path));
+    refresh_tracked_images(|path| paths.iter().any(|candidate| candidate == path));
 }
 
 pub(super) fn refresh_all_customized_icons() {
     refresh_tracked_icons(|_| true);
+    refresh_tracked_images(|_| true);
+}
+
+fn refresh_tracked_images(matches: impl Fn(&Path) -> bool) {
+    let pending = TRACKED_CUSTOMIZED_IMAGES.with_borrow_mut(|images| {
+        images.retain(|_, tracked| tracked.image.upgrade().is_some());
+        images
+            .values()
+            .filter(|tracked| matches(&tracked.path))
+            .filter_map(|tracked| {
+                Some((
+                    tracked.image.upgrade()?,
+                    tracked.path.clone(),
+                    tracked.icon.clone(),
+                ))
+            })
+            .collect::<Vec<_>>()
+    });
+    for (image, path, icon) in pending {
+        apply_path_customization_image(&image, &path, &icon);
+    }
 }
 
 fn refresh_tracked_icons(matches: impl Fn(&TrackedCustomizedIcon) -> bool) {

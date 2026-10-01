@@ -1365,7 +1365,6 @@ impl SidebarState {
 fn sync_sidebar_button(button: &gtk::Button, rail: bool) {
     let size = if rail { sidebar_rail_button_size() } else { -1 };
     button.set_size_request(size, size);
-    let is_pinned = button.has_css_class("sidebar-pinned-row");
     if let Some(content) = button.child() {
         let mut child = content.first_child();
         while let Some(widget) = child {
@@ -1376,15 +1375,6 @@ fn sync_sidebar_button(button: &gtk::Button, rail: bool) {
                 }
                 button.set_tooltip_text(rail.then_some(label.label().as_str()));
                 label.set_visible(!rail);
-            } else if is_pinned && let Some(image) = widget.downcast_ref::<gtk::Image>() {
-                crate::assets::set_primary_icon(
-                    image,
-                    if rail {
-                        crate::assets::icons::PIN
-                    } else {
-                        crate::assets::icons::FOLDER
-                    },
-                );
             }
         }
         content.set_halign(if rail {
@@ -2354,6 +2344,11 @@ impl SidebarState {
         let unpin = sidebar_context_option(crate::assets::icons::PIN, "Unpin", false);
         let properties = sidebar_context_option(crate::assets::icons::INFO, "Properties", false);
         menu.append(&unpin);
+        let customize = location.native_path().map(|path| {
+            let button = sidebar_context_option(crate::assets::icons::PALETTE, "Customize…", false);
+            menu.append(&button);
+            (button, path.to_path_buf())
+        });
         menu.append(&properties);
         let popover = gtk::Popover::builder()
             .child(&menu)
@@ -2362,6 +2357,24 @@ impl SidebarState {
             .build();
         popover.add_css_class("folder-context-popover");
         popover.set_parent(row);
+
+        if let Some((customize, path)) = customize {
+            let weak_popover = popover.downgrade();
+            let weak_row = row.downgrade();
+            customize.connect_clicked(move |_| {
+                if let Some(popover) = weak_popover.upgrade() {
+                    popover.popdown();
+                }
+                if let Some(row) = weak_row.upgrade() {
+                    super::browser::show_customize_modal(
+                        &row,
+                        path.clone(),
+                        true,
+                        crate::assets::icons::FOLDER,
+                    );
+                }
+            });
+        }
 
         let weak_state = Rc::downgrade(self);
         let unpin_popover = popover.downgrade();
@@ -2416,7 +2429,16 @@ impl SidebarState {
     }
 
     fn append_place(&self, icon: &str, name: &str, location: Location) -> gtk::Button {
-        self.append_device_place(icon, name, location, None)
+        let row = self.append_device_place(icon, name, location.clone(), None);
+        if let Some(path) = location.native_path()
+            && let Some(image) = row
+                .child()
+                .and_then(|content| content.first_child())
+                .and_downcast::<gtk::Image>()
+        {
+            super::thumbnail::show_customized_icon_image(&image, path, icon, image.pixel_size());
+        }
+        row
     }
 
     fn append_device_place(
