@@ -112,6 +112,8 @@ pub(in crate::ui) struct Preferences {
     sidebar_show_pictures: bool,
     #[serde(default = "default_enabled")]
     sidebar_show_videos: bool,
+    #[serde(default = "default_enabled")]
+    sidebar_expanded: bool,
     #[serde(default)]
     show_hidden: bool,
     #[serde(default)]
@@ -226,6 +228,7 @@ impl Default for Preferences {
             sidebar_show_music: true,
             sidebar_show_pictures: true,
             sidebar_show_videos: true,
+            sidebar_expanded: true,
             show_hidden: false,
             text_size: TextSize::default(),
             interface_renderer: InterfaceRenderer::default(),
@@ -1194,6 +1197,15 @@ impl PreferenceManager {
 
     pub fn set_sidebar_show_videos(&self, visible: bool) {
         self.preferences.borrow_mut().sidebar_show_videos = visible;
+        self.save_preferences();
+    }
+
+    pub fn sidebar_expanded(&self) -> bool {
+        self.preferences.borrow().sidebar_expanded
+    }
+
+    pub fn set_sidebar_expanded(&self, expanded: bool) {
+        self.preferences.borrow_mut().sidebar_expanded = expanded;
         self.save_preferences();
     }
 

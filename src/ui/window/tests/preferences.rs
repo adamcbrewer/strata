@@ -156,6 +156,48 @@ fn browsing_control_and_shortcut_update_both_windows() {
 }
 
 #[test]
+fn saved_sidebar_collapsed_restores_and_ctrl_b_updates_both_windows() {
+    gtk_test(
+        "ui::window::tests::preferences::saved_sidebar_collapsed_restores_and_ctrl_b_updates_both_windows",
+        || {
+            write_settings("sidebar_expanded = false\n");
+            let manager = PreferenceManager::shared();
+            assert!(!manager.sidebar_expanded());
+            let first = OpenWindow::open();
+            let second = OpenWindow::open();
+            for open in [&first, &second] {
+                assert!(!open.content.sidebar_toggle().is_active());
+                assert!(!open.content.sidebar_visible());
+            }
+            press(
+                &first.window,
+                gtk::gdk::Key::b,
+                gtk::gdk::ModifierType::CONTROL_MASK,
+            );
+            settle();
+            assert!(manager.sidebar_expanded());
+            for open in [&first, &second] {
+                assert!(open.content.sidebar_toggle().is_active());
+                wait_until(|| open.content.sidebar_visible());
+            }
+            press(
+                &second.window,
+                gtk::gdk::Key::b,
+                gtk::gdk::ModifierType::CONTROL_MASK,
+            );
+            settle();
+            assert!(!manager.sidebar_expanded());
+            for open in [&first, &second] {
+                assert!(!open.content.sidebar_toggle().is_active());
+                wait_until(|| !open.content.sidebar_visible());
+            }
+            let saved = std::fs::read_to_string(settings_file()).expect("saved settings");
+            assert!(saved.contains("sidebar_expanded = false"), "{saved}");
+        },
+    );
+}
+
+#[test]
 fn toggle_leaves_tenxer_everywhere_and_shift_q_closes_only_the_current_window() {
     gtk_test(
         "ui::window::tests::preferences::toggle_leaves_tenxer_everywhere_and_shift_q_closes_only_the_current_window",
