@@ -261,6 +261,12 @@ fn append_browsing_options(content: &gtk::Box, manager: &Rc<PreferenceManager>) 
             read: PreferenceManager::tenxer_mode,
             write: PreferenceManager::set_tenxer_mode,
         },
+        PreferenceSwitch {
+            title: "Show F1 Shortcuts button",
+            description: "Show the shortcuts button in the bottom bar. Item counts and clipboard status remain visible when the button is hidden. F1 always opens the full reference.",
+            read: PreferenceManager::show_keybinding_hints,
+            write: PreferenceManager::set_show_keybinding_hints,
+        },
     ] {
         append_preference_switch(&browsing, manager, switch);
     }
@@ -318,11 +324,13 @@ fn append_experimental_label(row: &gtk::Box, manager: &Rc<PreferenceManager>) {
     experimental.set_xalign(0.0);
     experimental.set_wrap(true);
     experimental.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-    let label = experimental.clone();
     manager.bind_preference(
         &experimental,
         PreferenceManager::tenxer_mode,
-        move |_, enabled| {
+        move |widget, enabled| {
+            let label = widget
+                .downcast_ref::<gtk::Label>()
+                .expect("10xer experimental label");
             label.set_text(if enabled {
                 crate::ui::shortcut_reference::EXPERIMENTAL_LABEL
             } else {

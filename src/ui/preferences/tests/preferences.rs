@@ -446,6 +446,7 @@ fn every_saved_preference_loads_before_any_settings_page_exists() {
             assert!(!manager.sidebar_show_music());
             assert!(!manager.sidebar_show_pictures());
             assert!(!manager.sidebar_show_videos());
+            assert!(!manager.sidebar_expanded());
             assert_eq!(
                 manager.sidebar_places_visibility(),
                 [
@@ -600,6 +601,7 @@ fn all_preference_setters_publish_and_persist_without_duplicate_notifications() 
                 |m| m.set_sidebar_show_music(true),
                 |m| m.set_sidebar_show_pictures(true),
                 |m| m.set_sidebar_show_videos(true),
+                |m| m.set_sidebar_expanded(true),
                 |m| m.set_sort_preferences(ViewPreferences::default()),
                 |m| m.set_text_size(TextSize::new(11)),
                 |m| m.set_interface_renderer(InterfaceRenderer::System),

@@ -842,26 +842,31 @@ pub(super) fn build_appearance_menu(
     preview_toggle.add_css_class("appearance-option");
     preview_toggle.add_css_class("preview-panel-option");
     super::accessibility::set_label(&preview_toggle, "Preview panel");
-    let shortcut_label = preview_shortcut.clone();
-    let description_toggle = preview_toggle.clone();
+    let description_toggle = preview_toggle.downgrade();
     preferences.bind_preference(
         &preview_shortcut,
-        PreferenceManager::tenxer_mode,
-        move |_, enabled| {
-            let text = crate::ui::shortcut_reference::context_hint_for(
+        |preferences| {
+            crate::ui::shortcut_reference::context_hint_for(
                 crate::ui::shortcut_reference::ContextHint::Preview,
-                enabled,
-            );
-            shortcut_label.set_text(text);
-            shortcut_label.set_visible(!text.is_empty());
-            crate::ui::accessibility::set_description(
-                &description_toggle,
-                Some(&if text.is_empty() {
-                    "Toggle preview panel while browsing".to_owned()
-                } else {
-                    format!("Toggle preview panel while browsing ({text})")
-                }),
-            );
+                preferences,
+            )
+        },
+        move |widget, text| {
+            let shortcut = widget
+                .downcast_ref::<gtk::Label>()
+                .expect("preview shortcut label");
+            shortcut.set_text(text);
+            shortcut.set_visible(!text.is_empty());
+            if let Some(toggle) = description_toggle.upgrade() {
+                crate::ui::accessibility::set_description(
+                    &toggle,
+                    Some(&if text.is_empty() {
+                        "Toggle preview panel while browsing".to_owned()
+                    } else {
+                        format!("Toggle preview panel while browsing ({text})")
+                    }),
+                );
+            }
         },
     );
     let actions = gio::SimpleActionGroup::new();
@@ -1368,7 +1373,6 @@ impl SidebarState {
 fn sync_sidebar_button(button: &gtk::Button, rail: bool) {
     let size = if rail { sidebar_rail_button_size() } else { -1 };
     button.set_size_request(size, size);
-    let is_pinned = button.has_css_class("sidebar-pinned-row");
     if let Some(content) = button.child() {
         let mut child = content.first_child();
         while let Some(widget) = child {
@@ -1379,15 +1383,6 @@ fn sync_sidebar_button(button: &gtk::Button, rail: bool) {
                 }
                 button.set_tooltip_text(rail.then_some(label.label().as_str()));
                 label.set_visible(!rail);
-            } else if is_pinned && let Some(image) = widget.downcast_ref::<gtk::Image>() {
-                crate::assets::set_primary_icon(
-                    image,
-                    if rail {
-                        crate::assets::icons::PIN
-                    } else {
-                        crate::assets::icons::FOLDER
-                    },
-                );
             }
         }
         content.set_halign(if rail {
@@ -1986,6 +1981,7 @@ impl SidebarState {
         location: Location,
     ) -> gtk::Button {
         let row = sidebar_button(icon, name);
+        customize_sidebar_folder_icon(&row, &location, icon);
         crate::ui::accessibility::set_description(&row, Some(&location.display_path()));
         self.bind_place_row(&row, location.clone(), PlaceNavigation::Direct);
         self.attach_place_context_menu(&row, location, move |state| {
@@ -2357,6 +2353,11 @@ impl SidebarState {
         let unpin = sidebar_context_option(crate::assets::icons::PIN, "Unpin", false);
         let properties = sidebar_context_option(crate::assets::icons::INFO, "Properties", false);
         menu.append(&unpin);
+        let customize = location.native_path().map(|path| {
+            let button = sidebar_context_option(crate::assets::icons::PALETTE, "Customize…", false);
+            menu.append(&button);
+            (button, path.to_path_buf())
+        });
         menu.append(&properties);
         let popover = gtk::Popover::builder()
             .child(&menu)
@@ -2365,6 +2366,24 @@ impl SidebarState {
             .build();
         popover.add_css_class("folder-context-popover");
         popover.set_parent(row);
+
+        if let Some((customize, path)) = customize {
+            let weak_popover = popover.downgrade();
+            let weak_row = row.downgrade();
+            customize.connect_clicked(move |_| {
+                if let Some(popover) = weak_popover.upgrade() {
+                    popover.popdown();
+                }
+                if let Some(row) = weak_row.upgrade() {
+                    super::browser::show_customize_modal(
+                        &row,
+                        path.clone(),
+                        true,
+                        crate::assets::icons::FOLDER,
+                    );
+                }
+            });
+        }
 
         let weak_state = Rc::downgrade(self);
         let unpin_popover = popover.downgrade();
@@ -2419,7 +2438,9 @@ impl SidebarState {
     }
 
     fn append_place(&self, icon: &str, name: &str, location: Location) -> gtk::Button {
-        self.append_device_place(icon, name, location, None)
+        let row = self.append_device_place(icon, name, location.clone(), None);
+        customize_sidebar_folder_icon(&row, &location, icon);
+        row
     }
 
     fn append_device_place(
@@ -3602,6 +3623,17 @@ fn sidebar_context_option(icon: &str, label: &str, danger: bool) -> gtk::Button 
     row.append(&title);
     button.set_child(Some(&row));
     button
+}
+
+fn customize_sidebar_folder_icon(row: &gtk::Button, location: &Location, icon: &str) {
+    if let Some(path) = location.native_path()
+        && let Some(image) = row
+            .child()
+            .and_then(|content| content.first_child())
+            .and_downcast::<gtk::Image>()
+    {
+        super::thumbnail::show_customized_folder_image(&image, path, icon, image.pixel_size());
+    }
 }
 
 fn sidebar_button(icon: &str, name: &str) -> gtk::Button {

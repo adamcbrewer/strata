@@ -75,7 +75,7 @@ def test_action_editor_tabs_validate_save_and_reopen(strata):
     strata.pointer.click(control("Stop", "toggle button"))
     strata.pointer.click(control("Menu item", "toggle button"))
     fill("Extensions", "txt")
-    strata.pointer.click(control("Create action", "button"))
+    strata.pointer.click(strata.settle(control("Create action", "button")))
     strata.wait(
         lambda: control("Script", "page tab").has_state("selected"),
         "invalid argument token to return to Script",
@@ -83,7 +83,7 @@ def test_action_editor_tabs_validate_save_and_reopen(strata):
     action_dir = strata.environment.config_home / "strata/actions/batch-rename"
     assert not action_dir.exists(), "invalid drafts must not write an action"
     fill("Arguments", "%s\\n\n{path}")
-    strata.pointer.click(control("Create action", "button"))
+    strata.pointer.click(strata.settle(control("Create action", "button")))
     manifest = action_dir / "action.toml"
     strata.wait(manifest.exists, "the action manifest")
     strata.wait(
@@ -213,6 +213,5 @@ def test_tenxer_numbered_action_confirms_before_running(numbered_action, strata)
     strata.keyboard.press("1")
     confirmation = strata.wait(lambda: strata.window.find(role="dialog", name="Run this action?"), "confirmation")
     strata.pointer.click(confirmation.find(role="button", name="Run"))
-    strata.wait(lambda: numbered_action.exists(), "the action to run")
+    strata.wait(lambda: strata.window.find(role="label", name_matches="Done in ") is not None, "Jobs to show the completed run")
     assert numbered_action.read_text().splitlines() == [str(strata.fixture.path("todo.txt"))]
-    strata.wait(lambda: strata.window.find(role="label", name_matches="Done in ") is not None, "Jobs to show the run")
