@@ -213,9 +213,5 @@ def test_tenxer_numbered_action_confirms_before_running(numbered_action, strata)
     strata.keyboard.press("1")
     confirmation = strata.wait(lambda: strata.window.find(role="dialog", name="Run this action?"), "confirmation")
     strata.pointer.click(confirmation.find(role="button", name="Run"))
-    strata.wait(
-        lambda: numbered_action.exists() and numbered_action.read_text().endswith("\n"),
-        "the action to finish writing its output",
-    )
+    strata.wait(lambda: strata.window.find(role="label", name_matches="Done in ") is not None, "Jobs to show the completed run")
     assert numbered_action.read_text().splitlines() == [str(strata.fixture.path("todo.txt"))]
-    strata.wait(lambda: strata.window.find(role="label", name_matches="Done in ") is not None, "Jobs to show the run")

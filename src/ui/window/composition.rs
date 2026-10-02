@@ -116,6 +116,16 @@ impl WindowContent {
     }
 
     #[cfg(test)]
+    pub(super) fn sidebar_toggle(&self) -> &gtk::ToggleButton {
+        &self.header.sidebar_toggle
+    }
+
+    #[cfg(test)]
+    pub(super) fn sidebar_visible(&self) -> bool {
+        self.sidebar.widget.is_visible()
+    }
+
+    #[cfg(test)]
     pub(super) fn footer(&self) -> &crate::ui::shortcut_footer::ShortcutFooter {
         &self.footer.shortcuts
     }

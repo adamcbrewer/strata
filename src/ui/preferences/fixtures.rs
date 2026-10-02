@@ -54,6 +54,7 @@ pub(in crate::ui) fn non_default_preferences() -> Preferences {
         sidebar_show_music: false,
         sidebar_show_pictures: false,
         sidebar_show_videos: false,
+        sidebar_expanded: false,
         show_hidden: true,
         text_size: TextSize::new(24),
         interface_renderer: InterfaceRenderer::Cairo,

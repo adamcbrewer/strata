@@ -78,6 +78,7 @@ control that might be midway through synchronization.
 | Automatic updates, release channel | Eligibility checks read current preferences. Controls synchronize, and all windows clear outdated notices when these preferences change, even without opening Settings. A package-managed installation's tracked channel is enforced when read, not by constructing Settings. |
 | Sidebar order | Existing sidebars bind to the shared order. |
 | Sidebar default-place visibility | Existing sidebars bind to the shared Home, Trash, Network, Recent, and standard-folder visibility (Desktop, Documents, Downloads, Music, Pictures, and Videos) and rebuild. Enabled by default; hiding removes that place from the sidebar without changing pins or devices. Recent is also omitted when GTK recent-file tracking or the runtime Recent VFS backend is unavailable, and from local-only sidebars. Toggle the location chips under General → Sidebar; existing default-place Unpin context actions remain available where supported. Re-enable a hidden place’s chip to restore it. |
+| Sidebar expanded | Browser windows bind their header toggle at construction: a saved collapsed state starts closed without animation, and `Ctrl+B` or the header toggle persists the choice and updates all open browser windows live. Expanded by default; not exposed in Settings. The portal chooser keeps its own unsaved sidebar state. |
 | Modified date format | Modified-time labels read the saved format at every render; already-open labels re-render live. Properties uses full absolute local timestamps for Relative, while preserving ISO 8601 and Long. |
 | Folder colors/custom icons | Icon resolution reads the manager; existing customization refreshes notify rendered icons, including local sidebar folders, customization previews, and Properties. Sidebar folder icons retain their customization in collapsed mode and across row rebuilds. Local sidebar folders expose the shared Customize action. |
 | Recent Send-to destinations | `send_to_recent_destinations` stores up to three relative directory paths per stable removable-device ID. The selection menu validates them against the device's current canonical root when opened and again when activated; no Settings control is exposed. |
@@ -221,7 +222,7 @@ Changing it refreshes active filters across windows and is saved for next launch
 In **Settings → General → Browsing**, **10xer mode** is off by default.
 Its subtitle is **Opinionated keyboard-centric mode with Yazi-style navigation. Disables some features. Toggle with Ctrl-Shift-M.**
 The footer shows a compact **10X** pill at the right, immediately before the item count, while the mode is on.
-While the mode is on, the 10xer mode row, **Settings → Keybindings**, and the F1 / `~` reference are labeled **(experimental feature, under active development)**. The footer pill shows only **10X**; the note is in its accessible description. Those surfaces list only the commands that currently run.
+While the mode is on, the 10xer mode row and the F1 / `~` reference are labeled **(experimental feature, under active development)**. The footer pill shows only **10X**; the note is in its accessible description. Those surfaces list only the commands that currently run.
 It hides window Search and pane Close/filter/refresh/sort chrome in
 interactive browsers and the portal file chooser (window Close and chooser
 Accept/Cancel stay; List column headings stay),
@@ -240,7 +241,7 @@ leaving preview keyboard ownership restores its previous focusability without
 closing the drawer. Default **Ctrl+F** then follows the saved **Include subfolders**
 choice again. Initial preference binding applies chrome and accelerators without
 transition teardown or a file-list focus grab at disabled startup.
-Context-menu shortcut hints and **Settings → Keybindings** list the currently
+Context-menu shortcut hints and the F1 / `~` reference list the currently
 active map (including the kept Ctrl/F-key conventions). **Type to search** and
 **Keep arrows in file list** stay saved and editable; while the mode is on they
 are unused and those rows show the subtitle **Not used in 10xer mode.**
