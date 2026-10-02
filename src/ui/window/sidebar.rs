@@ -214,14 +214,14 @@ impl SidebarState {
     fn observe_navigation_and_trash(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         self.browser.observe(move |event| {
-            let Some(state) = weak.upgrade() else {
-                return;
-            };
             let changes_active_place = Self::event_changes_active_place(event);
             let changes_trash = event_changes_trash_contents(event);
             if !changes_active_place && !changes_trash {
                 return;
             }
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
             if changes_active_place {
                 state.sync_active_place();
             }

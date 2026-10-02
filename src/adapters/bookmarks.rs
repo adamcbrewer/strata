@@ -83,7 +83,6 @@ fn remove_deleted_pins_with(
         if retained == contents.as_ref() {
             return Ok(());
         }
-        // Keep other applications' edits, including labels we cannot decode.
         match replace(&retained, etag.as_deref()) {
             Ok(_) => return Ok(()),
             Err(error) if retries < 2 && error.matches(gio::IOErrorEnum::WrongEtag) => retries += 1,

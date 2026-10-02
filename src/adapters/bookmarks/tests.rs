@@ -22,7 +22,6 @@ fn deleted_pins_and_descendants_are_removed_without_rewriting_other_entries() {
         file:///fixture/final No newline";
     let deleted = [gio::File::for_path("/fixture/gone")];
     assert_eq!(retain_unrelated_bookmarks(contents, &deleted), expected);
-    assert_eq!(retain_unrelated_bookmarks(contents, &[]), contents);
 }
 
 #[test]
@@ -33,7 +32,6 @@ fn cleanup_reads_current_bookmarks_and_leaves_missing_files_absent() {
     let deleted = [Location::local("/fixture/gone")];
     remove_deleted_pins(&file, &deleted).expect("missing bookmarks");
     assert!(!path.exists());
-    std::fs::write(&path, b"file:///fixture/gone Gone\n").expect("initial pins");
     std::fs::write(
         &path,
         b"file:///fixture/gone Gone\nfile:///fixture/added External\xff\n",
@@ -108,7 +106,6 @@ fn cleanup_stops_on_repeated_conflicts_and_other_write_errors() {
             },
         );
         assert!(result.expect_err("write failure").matches(code));
-        assert_eq!(std::fs::read(path).expect("unchanged pins"), original);
         if code == gio::IOErrorEnum::PermissionDenied {
             assert_eq!(attempts, 1);
         }

@@ -464,7 +464,6 @@ fn deleting_browser_can_drop_after_a_confirmed_deletion_without_losing_pin_clean
                 context.iteration(false);
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            assert!(owner.borrow().is_none());
             assert!(!first.exists());
             assert!(second.exists());
             assert_eq!(

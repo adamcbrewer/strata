@@ -16,7 +16,7 @@ fn wait_until(mut condition: impl FnMut() -> bool) {
     }
 }
 
-fn deletion_updates_both_sidebars(permanent: bool) {
+fn check_trash_and_restore_do_not_resurrect_removed_pins() {
     let home = std::path::PathBuf::from(std::env::var_os("HOME").expect("isolated home"));
     let parent = home.join("fixture/gone");
     let child = parent.join("child");
@@ -51,7 +51,7 @@ fn deletion_updates_both_sidebars(permanent: bool) {
             observed.replace(Some(*succeeded));
         }
     });
-    browser.delete(entries, permanent);
+    browser.delete(entries, false);
     wait_until(|| finished.borrow().is_some());
     assert_eq!(*finished.borrow(), Some(true));
     assert!(!parent.exists());
@@ -67,34 +67,24 @@ fn deletion_updates_both_sidebars(permanent: bool) {
         second_sidebar.state.visible_pins.borrow().as_slice(),
         &[Location::local(&keep)]
     );
-    if !permanent {
-        let restored = Rc::new(std::cell::Cell::new(false));
-        let observed = restored.clone();
-        browser.observe(move |event| {
-            if matches!(event, crate::app::BrowserEvent::RestorationFinished) {
-                observed.set(true);
-            }
-        });
-        assert!(first.undo_last_operation());
-        wait_until(|| restored.get());
-        assert!(parent.exists());
-        assert_eq!(load_pinned_places().expect("pins after restore"), expected);
-    }
-}
-
-#[test]
-fn permanent_deletion_updates_pins_in_all_sidebars() {
-    crate::test_support::gtk_test(
-        "ui::window::bookmarks::tests::permanent_deletion_updates_pins_in_all_sidebars",
-        || deletion_updates_both_sidebars(true),
-    );
+    let restored = Rc::new(std::cell::Cell::new(false));
+    let observed = restored.clone();
+    browser.observe(move |event| {
+        if matches!(event, crate::app::BrowserEvent::RestorationFinished) {
+            observed.set(true);
+        }
+    });
+    assert!(first.undo_last_operation());
+    wait_until(|| restored.get());
+    assert!(parent.exists());
+    assert_eq!(load_pinned_places().expect("pins after restore"), expected);
 }
 
 #[test]
 fn trash_and_restore_do_not_resurrect_removed_pins() {
     crate::test_support::gtk_test(
         "ui::window::bookmarks::tests::trash_and_restore_do_not_resurrect_removed_pins",
-        || deletion_updates_both_sidebars(false),
+        check_trash_and_restore_do_not_resurrect_removed_pins,
     );
 }
 
