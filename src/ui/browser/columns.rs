@@ -220,6 +220,7 @@ struct PendingPointerActivation {
     pub(super) press: (f64, f64),
     pub(super) moved: bool,
     pub(super) kind: PendingActivationKind,
+    pub(super) location_hold: Option<super::tab_location::TabLocationHold>,
 }
 
 impl PendingPointerActivation {

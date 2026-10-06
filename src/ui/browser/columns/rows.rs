@@ -136,6 +136,10 @@ pub(super) fn column_rows(
         row.append(&chevron);
         item.set_child(Some(&row));
         let pending_activation = Rc::new(RefCell::new(None::<PendingPointerActivation>));
+        let pending_activation_for_unmap = pending_activation.clone();
+        row.connect_unmap(move |_| {
+            pending_activation_for_unmap.take();
+        });
         let was_selected = Rc::new(Cell::new(false));
         let mut content_drag: Option<gtk::DragSource> = None;
         if weak_state.upgrade().is_some_and(|state| state.interactive) {
@@ -431,6 +435,33 @@ pub(super) fn column_rows(
                 modifiers,
             );
             let preserve_group = change.preserved_group;
+            let filtered = search_active_for_click.get() || map_for_click.has_query();
+            let source_position = map_for_click.source_position(position);
+            let activate = !filtered
+                && weak_state_for_click.upgrade().is_some_and(|state| {
+                    source_position
+                        .and_then(|position| state.browser.entry_at(depth, position))
+                        .is_some_and(|entry| {
+                            should_activate_single_click(
+                                press_count,
+                                entry.is_directory(),
+                                state.columns_click_activation.get(),
+                                control,
+                                shift,
+                                preserve_group,
+                            ) && !state.browser.is_open_child(depth, &entry.location)
+                        })
+                });
+            let location_hold = weak_state_for_click.upgrade().and_then(|state| {
+                source_position
+                    .and_then(|position| state.browser.entry_at(depth, position))
+                    .filter(|entry| {
+                        !search_active_for_click.get()
+                            && entry.is_directory()
+                            && (activate || (filtered && press_count == 1 && !control && !shift))
+                    })
+                    .map(|_| state.hold_tab_location())
+            });
             modified_for_click.set(control || shift);
             if !shift && let Some(anchor) = change.anchor {
                 anchor_at(&weak_state_for_click, depth, &map_for_click, anchor);
@@ -456,7 +487,6 @@ pub(super) fn column_rows(
             }
             modified_for_click.set(false);
 
-            let filtered = search_active_for_click.get() || map_for_click.has_query();
             if filtered {
                 if press_count == 1
                     && !control
@@ -509,26 +539,18 @@ pub(super) fn column_rows(
                             press,
                             moved: false,
                             kind,
+                            location_hold,
                         }));
                     }
                 }
                 return;
             }
 
-            let source_position = map_for_click.source_position(position);
             if let (Some(state), Some(source_position)) =
                 (weak_state_for_click.upgrade(), source_position)
             {
                 let entry = state.browser.entry_at(depth, source_position);
                 if let Some(entry) = entry.as_ref() {
-                    let activate = should_activate_single_click(
-                        press_count,
-                        entry.is_directory(),
-                        state.columns_click_activation.get(),
-                        control,
-                        shift,
-                        preserve_group,
-                    ) && !state.browser.is_open_child(depth, &entry.location);
                     let slow_click_rename = press_count == 1
                         && selected_before
                         && selected_count_before == 1
@@ -573,6 +595,7 @@ pub(super) fn column_rows(
                             press,
                             moved: false,
                             kind: PendingActivationKind::Standard { preview },
+                            location_hold,
                         }));
                     }
                 }
@@ -586,9 +609,17 @@ pub(super) fn column_rows(
                 return;
             };
             let threshold = widget.settings().gtk_dnd_drag_threshold();
-            if let Some(pending) = pending_activation_for_motion.borrow_mut().as_mut() {
-                pending.update(x, y, threshold);
-            }
+            let cancelled_hold = pending_activation_for_motion
+                .borrow_mut()
+                .as_mut()
+                .and_then(|pending| {
+                    pending.update(x, y, threshold);
+                    pending
+                        .moved
+                        .then(|| pending.location_hold.take())
+                        .flatten()
+                });
+            drop(cancelled_hold);
             if crate::ui::pointer::exceeds_drag_threshold(
                 press_origin_for_update.get(),
                 (x, y),
@@ -642,7 +673,12 @@ pub(super) fn column_rows(
                             state.browser.preview(depth, pending.position);
                         }
                     } else {
-                        state.browser.activate(depth, pending.position);
+                        let activate = || state.browser.activate(depth, pending.position);
+                        if let Some(hold) = pending.location_hold.take() {
+                            hold.navigate(activate);
+                        } else {
+                            activate();
+                        }
                     }
                 }
                 PendingActivationKind::Mapped => {
@@ -654,7 +690,12 @@ pub(super) fn column_rows(
                         return;
                     }
                     if !state.browser.is_chooser_mode() {
-                        state.browser.activate_in_place(depth, pending.position);
+                        let activate = || state.browser.activate_in_place(depth, pending.position);
+                        if let Some(hold) = pending.location_hold.take() {
+                            hold.navigate(activate);
+                        } else {
+                            activate();
+                        }
                     }
                 }
                 PendingActivationKind::ChooserSearchNavigate => {

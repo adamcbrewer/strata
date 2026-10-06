@@ -3,15 +3,23 @@
 use super::*;
 use crate::test_support::gtk_test;
 
-fn open() -> (gtk::ApplicationWindow, Rc<TabWindow>) {
+fn application() -> gtk::Application {
     let application = gtk::Application::new(None::<&str>, gio::ApplicationFlags::NON_UNIQUE);
     application
         .register(None::<&gio::Cancellable>)
         .expect("test application");
+    application
+}
+
+fn open() -> (gtk::ApplicationWindow, Rc<TabWindow>) {
+    open_in(&application())
+}
+
+fn open_in(application: &gtk::Application) -> (gtk::ApplicationWindow, Rc<TabWindow>) {
     let preferences = PreferenceManager::shared();
     preferences.set_tenxer_mode(false);
     let window = gtk::ApplicationWindow::builder()
-        .application(&application)
+        .application(application)
         .default_width(1000)
         .default_height(700)
         .build();
@@ -42,6 +50,181 @@ fn load(browser: &BrowserView, location: Location) {
             .column_snapshot(0)
             .is_some_and(|column| !column.loading)
     });
+}
+
+fn find_widget(
+    widget: &gtk::Widget,
+    matches: &impl Fn(&gtk::Widget) -> bool,
+) -> Option<gtk::Widget> {
+    if matches(widget) {
+        return Some(widget.clone());
+    }
+    let mut child = widget.first_child();
+    while let Some(widget) = child {
+        child = widget.next_sibling();
+        if let Some(found) = find_widget(&widget, matches) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn folder_click(browser: &BrowserView, name: &str) -> gtk::GestureClick {
+    let label = find_widget(&browser.widget(), &|widget| {
+        widget
+            .downcast_ref::<gtk::Label>()
+            .is_some_and(|label| label.text() == name)
+    })
+    .expect("folder label");
+    let mut row = label;
+    while !row.has_css_class("file-row") {
+        row = row.parent().expect("folder row");
+    }
+    let controllers = row.observe_controllers();
+    (0..controllers.n_items())
+        .filter_map(|index| controllers.item(index).and_downcast::<gtk::GestureClick>())
+        .find(|click| click.button() == 1)
+        .expect("folder click gesture")
+}
+
+fn sibling_fixture(
+    application: &gtk::Application,
+) -> (
+    tempfile::TempDir,
+    gtk::ApplicationWindow,
+    Rc<TabWindow>,
+    BrowserView,
+    gtk::Label,
+) {
+    let root = tempfile::tempdir().expect("sibling fixture");
+    let parent = root.path().join("parent");
+    std::fs::create_dir_all(parent.join("alpha")).expect("first sibling");
+    std::fs::create_dir_all(parent.join("beta")).expect("second sibling");
+    let (window, tabs) = open_in(application);
+    tabs.preferences
+        .set_browser_mode(crate::ui::browser_modes::BrowserMode::Columns);
+    tabs.preferences.set_columns_mirror_selection(false);
+    load(&tabs.active_browser(), Location::local(&parent));
+    tabs.new_tab();
+    let view = tabs.active_browser();
+    wait_until(|| {
+        view.browser()
+            .column_snapshot(0)
+            .is_some_and(|column| !column.loading)
+    });
+    view.record_pointer_hover((1.0, 1.0), Some(0));
+    view.browser().activate(0, 0);
+    wait_until(|| {
+        view.browser()
+            .column_snapshot(1)
+            .is_some_and(|column| !column.loading)
+    });
+    let title = find_widget(tabs.strip.widget().upcast_ref(), &|widget| {
+        widget
+            .downcast_ref::<gtk::Label>()
+            .is_some_and(|label| label.text() == "alpha")
+    })
+    .expect("active tab title")
+    .downcast::<gtk::Label>()
+    .expect("label");
+    (root, window, tabs, view, title)
+}
+
+#[test]
+fn folder_click_titles_skip_parent_focus_and_keyboard_preview_stays_parent_scoped() {
+    gtk_test(
+        "ui::window::composition::tabs::tests::folder_click_titles_skip_parent_focus_and_keyboard_preview_stays_parent_scoped",
+        || {
+            let (root, window, tabs, view, title) = sibling_fixture(&application());
+            let changes = Rc::new(RefCell::new(Vec::new()));
+            let observed = changes.clone();
+            title.connect_notify_local(Some("label"), move |title, _| {
+                observed.borrow_mut().push(title.text().to_string());
+            });
+            let click = folder_click(&view, "beta");
+            click.emit_by_name::<()>("pressed", &[&1i32, &1f64, &1f64]);
+            assert_eq!(
+                view.browser().active_location(),
+                Some(Location::local(root.path().join("parent")))
+            );
+            let painted = Rc::new(Cell::new(false));
+            let signal = painted.clone();
+            let clock = window.frame_clock().expect("window frame clock");
+            let handler = clock.connect_after_paint(move |_| signal.set(true));
+            window.queue_draw();
+            wait_until(|| painted.get());
+            clock.disconnect(handler);
+            assert_eq!(
+                title.text(),
+                "alpha",
+                "holding a click must not publish the parent title"
+            );
+            click.emit_by_name::<()>("released", &[&1i32, &1f64, &1f64]);
+            wait_until(|| title.text() == "beta");
+            assert_eq!(&*changes.borrow(), &["beta".to_string()]);
+            assert_eq!(view.browser().active_depth(), Some(1));
+            assert!(view.browser().selected_entries().is_empty());
+
+            view.keyboard_navigation();
+            view.browser().focus_parent();
+            assert_eq!(title.text(), "parent");
+            view.browser().select(0, 0);
+            view.browser()
+                .show_child(0, Location::local(root.path().join("parent/alpha")));
+            assert_eq!(
+                title.text(),
+                "parent",
+                "a child preview must not rename the active parent"
+            );
+            view.browser().activate_focused();
+            assert_eq!(title.text(), "alpha");
+            tabs.select(1);
+            assert_eq!(
+                tabs.active_browser().browser().active_location(),
+                Some(Location::local(root.path().join("parent")))
+            );
+            window.destroy();
+        },
+    );
+}
+
+#[test]
+fn aborted_folder_clicks_release_the_title_hold() {
+    gtk_test(
+        "ui::window::composition::tabs::tests::aborted_folder_clicks_release_the_title_hold",
+        || {
+            let application = application();
+            for outcome in ["cancel", "moved", "missing", "keyboard", "unmap"] {
+                let (root, window, tabs, view, title) = sibling_fixture(&application);
+                let click = folder_click(&view, "beta");
+                click.emit_by_name::<()>("pressed", &[&1i32, &1f64, &1f64]);
+                assert_eq!(title.text(), "alpha", "{outcome}: pending click");
+                match outcome {
+                    "cancel" => click.emit_by_name::<()>("cancel", &[&None::<gdk::EventSequence>]),
+                    "moved" => click.emit_by_name::<()>("released", &[&1i32, &100f64, &100f64]),
+                    "missing" => {
+                        std::fs::remove_dir(root.path().join("parent/beta"))
+                            .expect("remove pending destination");
+                        click.emit_by_name::<()>("released", &[&1i32, &1f64, &1f64]);
+                    }
+                    "keyboard" => {
+                        view.keyboard_navigation();
+                        view.browser().focus_parent();
+                        click.emit_by_name::<()>("released", &[&1i32, &1f64, &1f64]);
+                    }
+                    "unmap" => tabs.select(1),
+                    _ => unreachable!(),
+                }
+                assert_eq!(title.text(), "parent", "{outcome}: resolved click");
+                assert_eq!(
+                    view.browser().active_location(),
+                    Some(Location::local(root.path().join("parent"))),
+                    "{outcome}: active location"
+                );
+                window.destroy();
+            }
+        },
+    );
 }
 
 #[test]

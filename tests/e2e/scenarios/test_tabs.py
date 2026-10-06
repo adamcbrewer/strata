@@ -2,6 +2,7 @@
 """Live browser tabs, keyboard routing and cross-tab file transfers."""
 
 import pytest
+from gi.repository import Atspi
 
 from harness.interaction import MODIFIER_KEYSYMS
 from harness.modes import ALL_MODES
@@ -19,6 +20,47 @@ def selected_tab(strata, name):
         lambda: tab(strata, name).has_state("selected"),
         f"active tab {name}",
     )
+
+
+@pytest.mark.preferences(browser_mode="columns")
+def test_folder_click_keeps_tab_name_until_release_and_keyboard_focus_still_renames(strata):
+    parent = "documents"
+    strata.fixture.path("documents/alpha").mkdir()
+    strata.fixture.path("documents/beta").mkdir()
+    strata.keyboard.press("ctrl+t")
+    strata.keyboard.press("ctrl+l")
+    strata.keyboard.press("ctrl+a")
+    strata.keyboard.type_text(str(strata.fixture.path(parent)))
+    strata.keyboard.press("Return")
+    strata.wait_for_directory(parent)
+    strata.open_directory("alpha")
+    selected_tab(strata, "alpha")
+    scrollbar = strata.wait(
+        lambda: strata.window.find(role="scroll bar", states={"horizontal"}),
+        "column scrollbar",
+    )
+    value = Atspi.Accessible.get_value_iface(scrollbar.accessible)
+    assert Atspi.Value.set_current_value(value, 0.0)
+    target = strata.settle(strata.entry("beta", directory=parent))
+    origin = strata.pointer.drag_origin(target)
+    try:
+        strata.pointer.drag_points(origin, origin, release=False)
+        strata.settle(target)
+        strata.wait_for_selection(["beta"], parent)
+        assert strata.window.find(role="page tab", name="alpha", states={"selected"}) is not None
+        assert strata.window.find(role="page tab", name="beta") is None
+    finally:
+        strata.pointer.connection.button(1, False)
+    selected_tab(strata, "beta")
+    strata.wait_for_directory("beta")
+    strata.wait_for_selection([], "beta")
+    strata.keyboard.press("Left")
+    strata.wait(
+        lambda: strata.window.find(role="page tab", name=parent, states={"selected"}),
+        "parent tab name after deliberate keyboard focus",
+    )
+    strata.keyboard.press("Right")
+    selected_tab(strata, "beta")
 
 
 @pytest.mark.parametrize("tenxer", [
