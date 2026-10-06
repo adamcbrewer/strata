@@ -374,6 +374,21 @@ impl TabWindow {
         self.strip.hints(self.hints.get());
     }
 
+    fn move_active_tab(&self, delta: i32) {
+        let tabs = self.tabs.borrow();
+        let Some(current) = tabs.iter().position(|tab| tab.id == self.active.get()) else {
+            return;
+        };
+        let target = current
+            .checked_add_signed(delta as isize)
+            .and_then(|index| tabs.get(index))
+            .map(|tab| tab.id);
+        drop(tabs);
+        if let Some(target) = target {
+            self.reorder(self.active.get(), target);
+        }
+    }
+
     fn show_hints(&self, show: bool) {
         if self.hints.replace(show) != show {
             self.strip.hints(show);
@@ -417,6 +432,10 @@ impl TabWindow {
             || (mods == ctrl_shift && matches!(key, Key::Tab | Key::ISO_Left_Tab))
         {
             self.cycle(-1);
+        } else if mods == ctrl_shift
+            && let Some(delta) = super::super::page_direction(key)
+        {
+            self.move_active_tab(delta);
         } else if mods == ctrl_shift
             && let Some(index) = tab_index(key)
         {
@@ -485,7 +504,9 @@ pub(in crate::ui::window) fn is_tab_shortcut(key: gdk::Key, modifiers: gdk::Modi
                 | Key::KP_Page_Down
         ))
         || (mods == (M::CONTROL_MASK | M::SHIFT_MASK)
-            && (matches!(key, Key::Tab | Key::ISO_Left_Tab) || tab_index(key).is_some()))
+            && (matches!(key, Key::Tab | Key::ISO_Left_Tab)
+                || super::super::page_direction(key).is_some()
+                || tab_index(key).is_some()))
 }
 
 pub(in crate::ui::window) fn tab_index(key: gdk::Key) -> Option<usize> {

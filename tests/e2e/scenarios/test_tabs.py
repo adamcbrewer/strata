@@ -68,6 +68,28 @@ def test_tabs_keep_locations_and_support_numbered_shortcuts(strata, tenxer):
         for name in names:
             strata.keyboard.press(shortcut)
             selected_tab(strata, name)
+    for shortcut, order in [
+        ("ctrl+shift+Page_Up", [root, "pictures", "archive"]),
+        ("ctrl+shift+Page_Up", ["pictures", root, "archive"]),
+        ("ctrl+shift+Page_Up", ["pictures", root, "archive"]),
+        ("ctrl+shift+Page_Down", [root, "pictures", "archive"]),
+        ("ctrl+shift+Page_Down", [root, "archive", "pictures"]),
+        ("ctrl+shift+Page_Down", [root, "archive", "pictures"]),
+    ]:
+        strata.keyboard.press("ctrl+l")
+        field = strata.wait(
+            lambda: strata.window.find(role="text", name="Location (Ctrl+L)", states={"focused"}),
+            "location editor to take focus",
+        )
+        strata.keyboard.press(shortcut)
+        selected_tab(strata, "pictures")
+        strata.wait(lambda: field.has_state("focused"), "reordering to preserve location editor focus")
+        strata.keyboard.press("Escape")
+        for index, name in enumerate(order, start=1):
+            strata.keyboard.press(f"ctrl+shift+{index}")
+            selected_tab(strata, name)
+        strata.keyboard.press(f"ctrl+shift+{order.index('pictures') + 1}")
+        selected_tab(strata, "pictures")
     strata.keyboard.press("ctrl+w")
     selected_tab(strata, "archive")
     strata.keyboard.press("ctrl+w")

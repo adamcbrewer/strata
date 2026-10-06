@@ -717,6 +717,8 @@ Tabs use the same shortcuts in both modes: **Ctrl+T** creates a tab,
 **Ctrl+W** closes it, **Ctrl+Tab / Ctrl+Shift+Tab** cycles tabs, and
 **Ctrl+Page Up / Ctrl+Page Down** selects the previous / next tab, wrapping at
 either end.
+**Ctrl+Shift+Page Up / Ctrl+Shift+Page Down** moves the active tab left / right,
+stopping at either end of the strip.
 **Ctrl+Shift+1–9 / 0** selects a tab directly. Hold **Ctrl+Shift** to show tab
 numbers. See [browser tabs](keyboard-navigation.md#browser-tabs).
 

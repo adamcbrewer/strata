@@ -507,6 +507,10 @@ const DEFAULT_TOOLS: &[(&str, &str)] = &[
     ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous tab"),
     ("Ctrl+Page Up / Ctrl+Page Down", "Previous / next tab"),
     (
+        "Ctrl+Shift+Page Up / Page Down",
+        "Move the active tab left / right",
+    ),
+    (
         "Ctrl+Shift+1–9 / 0",
         "Select a tab (hold Ctrl+Shift for numbers)",
     ),
@@ -576,6 +580,10 @@ fn tenxer_tools(mode: BrowserMode, chooser: bool) -> Vec<(&'static str, &'static
             ("Ctrl+W", "Close the active tab"),
             ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous tab"),
             ("Ctrl+Page Up / Ctrl+Page Down", "Previous / next tab"),
+            (
+                "Ctrl+Shift+Page Up / Page Down",
+                "Move the active tab left / right",
+            ),
             (
                 "Ctrl+Shift+1–9 / 0",
                 "Select a tab (hold Ctrl+Shift for numbers)",
