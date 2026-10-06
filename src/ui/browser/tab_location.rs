@@ -2,7 +2,7 @@
 
 use std::rc::{Rc, Weak};
 
-use crate::{app::BrowserEvent, model::Location};
+use crate::model::Location;
 
 use super::{BrowserView, ViewState};
 
@@ -18,8 +18,16 @@ pub(super) struct TabLocation {
 
 struct Pending {
     id: u64,
-    navigating: bool,
-    generation: Option<u64>,
+    phase: Phase,
+}
+
+enum Phase {
+    Pressed,
+    Dispatching,
+    Awaiting {
+        generation: u64,
+        parent: Option<(usize, Location)>,
+    },
 }
 
 pub(super) struct TabLocationHold {
@@ -28,11 +36,15 @@ pub(super) struct TabLocationHold {
 }
 
 impl TabLocationHold {
-    pub(super) fn navigate(self, action: impl FnOnce()) {
+    pub(super) fn navigate(self, parent_depth: usize, action: impl FnOnce()) {
         let Some(state) = self.state.upgrade() else {
             return;
         };
-        let generation = state.browser.navigation_generation();
+        let generation_before = state.browser.navigation_generation();
+        let parent = state
+            .browser
+            .location_at(parent_depth)
+            .map(|location| (parent_depth, location));
         {
             let mut location = state.tab_location.borrow_mut();
             let Some(pending) = location
@@ -43,38 +55,42 @@ impl TabLocationHold {
                 return;
             };
             // Row teardown must not end a hold while URI validation is still pending.
-            pending.navigating = true;
+            pending.phase = Phase::Dispatching;
         }
         action();
+        let validation = state.browser.pending_navigation_generation();
         let mut location = state.tab_location.borrow_mut();
         if let Some(pending) = location.pending.as_mut()
             && pending.id == self.id
         {
-            if state.browser.navigation_generation() != generation {
-                pending.generation = Some(state.browser.navigation_generation());
+            if let Some(generation) =
+                validation.filter(|generation| *generation != generation_before)
+            {
+                pending.phase = Phase::Awaiting { generation, parent };
             } else {
                 location.pending = None;
             }
         }
         drop(location);
-        state.publish_tab_location();
+        state.refresh_tab_location();
     }
 }
 
 impl Drop for TabLocationHold {
     fn drop(&mut self) {
-        if let Some(state) = self.state.upgrade() {
-            let mut location = state.tab_location.borrow_mut();
-            if location
-                .pending
-                .as_ref()
-                .is_some_and(|pending| pending.id == self.id && !pending.navigating)
-            {
-                location.pending = None;
-            }
-            drop(location);
-            state.publish_tab_location();
+        let Some(state) = self.state.upgrade() else {
+            return;
+        };
+        let mut location = state.tab_location.borrow_mut();
+        if location
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.id == self.id && matches!(pending.phase, Phase::Pressed))
+        {
+            location.pending = None;
         }
+        drop(location);
+        state.publish_tab_location();
     }
 }
 
@@ -84,13 +100,13 @@ impl BrowserView {
         observer: impl Fn(Option<&Location>) + 'static,
     ) {
         let observer: Observer = Rc::new(observer);
-        let location = self.state.tab_location.borrow().location.clone();
-        self.state
-            .tab_location
-            .borrow_mut()
-            .observers
-            .push(observer.clone());
-        observer(location.as_ref());
+        let current = {
+            let mut location = self.state.tab_location.borrow_mut();
+            let current = location.location.clone();
+            location.observers.push(observer.clone());
+            current
+        };
+        observer(current.as_ref());
     }
 }
 
@@ -101,8 +117,7 @@ impl ViewState {
         let id = location.next_id;
         location.pending = Some(Pending {
             id,
-            navigating: false,
-            generation: None,
+            phase: Phase::Pressed,
         });
         TabLocationHold {
             state: Rc::downgrade(self),
@@ -115,24 +130,22 @@ impl ViewState {
         self.publish_tab_location();
     }
 
-    pub(super) fn refresh_tab_location(&self, event: &BrowserEvent) {
-        let finished = matches!(
-            event,
-            BrowserEvent::Reset
-                | BrowserEvent::ColumnAdded { .. }
-                | BrowserEvent::ColumnsTruncated { .. }
-                | BrowserEvent::ColumnsRelocated { .. }
-                | BrowserEvent::NavigationRejected { .. }
-                | BrowserEvent::LocationNavigationRejected { .. }
-        );
+    pub(super) fn refresh_tab_location(&self) {
+        if self.browser.navigation_update_in_progress() {
+            return;
+        }
         let mut location = self.tab_location.borrow_mut();
-        let superseded = !matches!(event, BrowserEvent::NavigationStarting)
-            && location.pending.as_ref().is_some_and(|pending| {
-                pending
-                    .generation
-                    .is_some_and(|generation| generation != self.browser.navigation_generation())
-            });
-        if finished || superseded {
+        let finished = location.pending.as_ref().is_some_and(|pending| {
+            if let Phase::Awaiting { generation, parent } = &pending.phase {
+                self.browser.pending_navigation_generation() != Some(*generation)
+                    || parent.as_ref().is_some_and(|(depth, location)| {
+                        self.browser.location_at(*depth).as_ref() != Some(location)
+                    })
+            } else {
+                false
+            }
+        });
+        if finished {
             location.pending = None;
         }
         drop(location);
@@ -140,6 +153,9 @@ impl ViewState {
     }
 
     fn publish_tab_location(&self) {
+        if self.browser.navigation_update_in_progress() {
+            return;
+        }
         let current = self.browser.active_location();
         let observers = {
             let mut location = self.tab_location.borrow_mut();

@@ -713,7 +713,13 @@ impl BrowserView {
         let observer_state = state.clone();
         state.browser.observe(move |event| {
             observer_state.handle(event);
-            observer_state.refresh_tab_location(event);
+            observer_state.refresh_tab_location();
+        });
+        let weak_state = Rc::downgrade(&state);
+        state.browser.observe_navigation(move || {
+            if let Some(state) = weak_state.upgrade() {
+                state.refresh_tab_location();
+            }
         });
 
         let click = gtk::GestureClick::new();

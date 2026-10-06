@@ -437,31 +437,28 @@ pub(super) fn column_rows(
             let preserve_group = change.preserved_group;
             let filtered = search_active_for_click.get() || map_for_click.has_query();
             let source_position = map_for_click.source_position(position);
-            let activate = !filtered
-                && weak_state_for_click.upgrade().is_some_and(|state| {
-                    source_position
-                        .and_then(|position| state.browser.entry_at(depth, position))
-                        .is_some_and(|entry| {
-                            should_activate_single_click(
-                                press_count,
-                                entry.is_directory(),
-                                state.columns_click_activation.get(),
-                                control,
-                                shift,
-                                preserve_group,
-                            ) && !state.browser.is_open_child(depth, &entry.location)
-                        })
-                });
-            let location_hold = weak_state_for_click.upgrade().and_then(|state| {
-                source_position
-                    .and_then(|position| state.browser.entry_at(depth, position))
-                    .filter(|entry| {
-                        !search_active_for_click.get()
-                            && entry.is_directory()
-                            && (activate || (filtered && press_count == 1 && !control && !shift))
-                    })
-                    .map(|_| state.hold_tab_location())
-            });
+            let (activate, location_hold) = if let Some(state) = weak_state_for_click.upgrade()
+                && let Some(entry) =
+                    source_position.and_then(|position| state.browser.entry_at(depth, position))
+            {
+                let activate = !filtered
+                    && should_activate_single_click(
+                        press_count,
+                        entry.is_directory(),
+                        state.columns_click_activation.get(),
+                        control,
+                        shift,
+                        preserve_group,
+                    )
+                    && !state.browser.is_open_child(depth, &entry.location);
+                let location_hold = (!search_active_for_click.get()
+                    && entry.is_directory()
+                    && (activate || (filtered && press_count == 1 && !control && !shift)))
+                    .then(|| state.hold_tab_location());
+                (activate, location_hold)
+            } else {
+                (false, None)
+            };
             modified_for_click.set(control || shift);
             if !shift && let Some(anchor) = change.anchor {
                 anchor_at(&weak_state_for_click, depth, &map_for_click, anchor);
@@ -614,10 +611,11 @@ pub(super) fn column_rows(
                 .as_mut()
                 .and_then(|pending| {
                     pending.update(x, y, threshold);
-                    pending
-                        .moved
-                        .then(|| pending.location_hold.take())
-                        .flatten()
+                    if pending.moved {
+                        pending.location_hold.take()
+                    } else {
+                        None
+                    }
                 });
             drop(cancelled_hold);
             if crate::ui::pointer::exceeds_drag_threshold(
@@ -675,7 +673,7 @@ pub(super) fn column_rows(
                     } else {
                         let activate = || state.browser.activate(depth, pending.position);
                         if let Some(hold) = pending.location_hold.take() {
-                            hold.navigate(activate);
+                            hold.navigate(depth, activate);
                         } else {
                             activate();
                         }
@@ -692,7 +690,7 @@ pub(super) fn column_rows(
                     if !state.browser.is_chooser_mode() {
                         let activate = || state.browser.activate_in_place(depth, pending.position);
                         if let Some(hold) = pending.location_hold.take() {
-                            hold.navigate(activate);
+                            hold.navigate(depth, activate);
                         } else {
                             activate();
                         }

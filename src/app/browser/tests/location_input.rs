@@ -578,6 +578,16 @@ fn synchronous_file_validation_keeps_async_parent_validation_alive() {
     });
     let browser = Browser::new(source.clone());
     browser.navigate(Location::local("/start"));
+    let snapshots = Rc::new(RefCell::new(Vec::new()));
+    let observed = snapshots.clone();
+    let weak = Rc::downgrade(&browser);
+    browser.observe_navigation(move || {
+        if let Some(browser) = weak.upgrade() {
+            observed
+                .borrow_mut()
+                .push(browser.pending_navigation_generation());
+        }
+    });
 
     assert_eq!(
         browser.navigate_input("sftp://host/share/report.pdf"),
@@ -586,6 +596,14 @@ fn synchronous_file_validation_keeps_async_parent_validation_alive() {
 
     assert!(source.parent_validation.borrow().is_some());
     assert!(!source.parent_cancelled.get());
+    let pending = browser
+        .pending_navigation_generation()
+        .expect("pending parent validation");
+    assert_eq!(&*snapshots.borrow(), &[Some(pending)]);
+    let complete = source.parent_validation.take().expect("parent validation");
+    complete(Ok(()));
+    assert_eq!(&*snapshots.borrow(), &[Some(pending), None]);
+    assert_eq!(browser.active_location(), file.parent());
 }
 
 #[test]
