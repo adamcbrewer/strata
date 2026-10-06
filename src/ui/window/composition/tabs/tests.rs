@@ -109,6 +109,14 @@ fn tab_shortcuts_work_in_both_modes_and_follow_reordering() {
             load(&tabs.active_browser(), Location::local(root.path()));
             for tenxer in [false, true] {
                 tabs.preferences.set_tenxer_mode(tenxer);
+                for key in [Key::Page_Up, Key::Page_Down] {
+                    assert!(is_tab_shortcut(key, M::CONTROL_MASK));
+                    assert_eq!(
+                        tabs.handle_key(key, M::CONTROL_MASK),
+                        glib::Propagation::Stop
+                    );
+                    assert_eq!(tabs.active.get(), 1);
+                }
                 assert_eq!(
                     tabs.handle_key(Key::t, M::CONTROL_MASK),
                     glib::Propagation::Stop
@@ -123,6 +131,47 @@ fn tab_shortcuts_work_in_both_modes_and_follow_reordering() {
                 assert_eq!(tabs.active.get(), 1);
                 tabs.handle_key(Key::ISO_Left_Tab, M::CONTROL_MASK | M::SHIFT_MASK);
                 assert_eq!(tabs.active.get(), new_id);
+                tabs.new_tab();
+                let last_id = tabs.active.get();
+                tabs.select(new_id);
+                for (key, expected) in [
+                    (Key::Page_Up, last_id),
+                    (Key::Page_Up, 1),
+                    (Key::Page_Down, last_id),
+                    (Key::Page_Down, new_id),
+                    (Key::KP_Page_Up, last_id),
+                    (Key::KP_Page_Up, 1),
+                    (Key::KP_Page_Down, last_id),
+                    (Key::KP_Page_Down, new_id),
+                ] {
+                    assert!(is_tab_shortcut(key, M::CONTROL_MASK | M::LOCK_MASK));
+                    assert_eq!(
+                        tabs.handle_key(key, M::CONTROL_MASK | M::LOCK_MASK),
+                        glib::Propagation::Stop
+                    );
+                    assert_eq!(tabs.active.get(), expected, "{key:?}, 10xer={tenxer}");
+                }
+                for modifiers in [
+                    M::empty(),
+                    M::SUPER_MASK,
+                    M::CONTROL_MASK | M::SHIFT_MASK,
+                    M::CONTROL_MASK | M::ALT_MASK,
+                    M::CONTROL_MASK | M::SUPER_MASK,
+                    M::CONTROL_MASK | M::META_MASK,
+                    M::CONTROL_MASK | M::HYPER_MASK,
+                ] {
+                    for key in [
+                        Key::Page_Up,
+                        Key::Page_Down,
+                        Key::KP_Page_Up,
+                        Key::KP_Page_Down,
+                    ] {
+                        assert!(!is_tab_shortcut(key, modifiers));
+                        assert_eq!(tabs.handle_key(key, modifiers), glib::Propagation::Proceed);
+                        assert_eq!(tabs.active.get(), new_id);
+                    }
+                }
+                tabs.close(last_id);
                 tabs.handle_key(Key::w, M::CONTROL_MASK);
                 assert_eq!(tabs.active.get(), 1);
             }
@@ -269,6 +318,19 @@ fn operations_in_inactive_tabs_prevent_tab_and_window_closure() {
                 count,
                 "modal input cannot create a hidden tab"
             );
+            let active = tabs.active.get();
+            for key in [
+                gdk::Key::Page_Up,
+                gdk::Key::Page_Down,
+                gdk::Key::KP_Page_Up,
+                gdk::Key::KP_Page_Down,
+            ] {
+                assert_eq!(
+                    tabs.handle_key(key, gdk::ModifierType::CONTROL_MASK),
+                    glib::Propagation::Proceed
+                );
+                assert_eq!(tabs.active.get(), active, "modal input cannot switch tabs");
+            }
             window.destroy();
             assert!(operations.cancelled(operation));
         },

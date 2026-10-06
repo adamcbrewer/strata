@@ -386,7 +386,13 @@ impl TabWindow {
         modifiers: gdk::ModifierType,
     ) -> glib::Propagation {
         use gdk::{Key, ModifierType as M};
-        let mods = modifiers & (M::CONTROL_MASK | M::SHIFT_MASK | M::ALT_MASK | M::SUPER_MASK);
+        let mods = modifiers
+            & (M::CONTROL_MASK
+                | M::SHIFT_MASK
+                | M::ALT_MASK
+                | M::SUPER_MASK
+                | M::META_MASK
+                | M::HYPER_MASK);
         let ctrl_shift = M::CONTROL_MASK | M::SHIFT_MASK;
         let held = mods
             | match key {
@@ -403,9 +409,13 @@ impl TabWindow {
             self.new_tab();
         } else if mods == M::CONTROL_MASK && matches!(key, Key::w | Key::W) {
             self.close(self.active.get());
-        } else if mods == M::CONTROL_MASK && key == Key::Tab {
+        } else if mods == M::CONTROL_MASK
+            && matches!(key, Key::Tab | Key::Page_Down | Key::KP_Page_Down)
+        {
             self.cycle(1);
-        } else if mods == ctrl_shift && matches!(key, Key::Tab | Key::ISO_Left_Tab) {
+        } else if (mods == M::CONTROL_MASK && matches!(key, Key::Page_Up | Key::KP_Page_Up))
+            || (mods == ctrl_shift && matches!(key, Key::Tab | Key::ISO_Left_Tab))
+        {
             self.cycle(-1);
         } else if mods == ctrl_shift
             && let Some(index) = tab_index(key)
@@ -454,8 +464,26 @@ fn operations_active(window: &gtk::ApplicationWindow) {
 
 pub(in crate::ui::window) fn is_tab_shortcut(key: gdk::Key, modifiers: gdk::ModifierType) -> bool {
     use gdk::{Key, ModifierType as M};
-    let mods = modifiers & (M::CONTROL_MASK | M::SHIFT_MASK | M::ALT_MASK | M::SUPER_MASK);
-    (mods == M::CONTROL_MASK && matches!(key, Key::t | Key::T | Key::w | Key::W | Key::Tab))
+    let mods = modifiers
+        & (M::CONTROL_MASK
+            | M::SHIFT_MASK
+            | M::ALT_MASK
+            | M::SUPER_MASK
+            | M::META_MASK
+            | M::HYPER_MASK);
+    (mods == M::CONTROL_MASK
+        && matches!(
+            key,
+            Key::t
+                | Key::T
+                | Key::w
+                | Key::W
+                | Key::Tab
+                | Key::Page_Up
+                | Key::KP_Page_Up
+                | Key::Page_Down
+                | Key::KP_Page_Down
+        ))
         || (mods == (M::CONTROL_MASK | M::SHIFT_MASK)
             && (matches!(key, Key::Tab | Key::ISO_Left_Tab) || tab_index(key).is_some()))
 }

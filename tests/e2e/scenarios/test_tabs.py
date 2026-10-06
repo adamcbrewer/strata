@@ -51,6 +51,25 @@ def test_tabs_keep_locations_and_support_numbered_shortcuts(strata, tenxer):
     selected_tab(strata, root)
     strata.keyboard.press("ctrl+shift+2")
     selected_tab(strata, "archive")
+    strata.keyboard.press("ctrl+t")
+    strata.keyboard.press("alt+Up")
+    strata.wait_for_directory(root)
+    strata.open_directory("pictures")
+    selected_tab(strata, "pictures")
+    for shortcut, names in [
+        ("ctrl+Page_Up", ["archive", root, "pictures"]),
+        ("ctrl+Page_Down", [root, "archive", "pictures"]),
+    ]:
+        strata.keyboard.press("ctrl+l")
+        strata.wait(
+            lambda: strata.window.find(role="text", name="Location (Ctrl+L)", states={"focused"}),
+            "location editor to take focus",
+        )
+        for name in names:
+            strata.keyboard.press(shortcut)
+            selected_tab(strata, name)
+    strata.keyboard.press("ctrl+w")
+    selected_tab(strata, "archive")
     strata.keyboard.press("ctrl+w")
     strata.wait_for_selection(["todo.txt"], root)
     # The same add control works after the strip collapses.
@@ -112,6 +131,10 @@ def test_dragging_tab_labels_changes_numbered_order(strata):
     strata.keyboard.press("ctrl+shift+2")
     selected_tab(strata, root)
     strata.keyboard.press("ctrl+shift+1")
+    selected_tab(strata, "archive")
+    strata.keyboard.press("ctrl+Page_Down")
+    selected_tab(strata, root)
+    strata.keyboard.press("ctrl+Page_Up")
     selected_tab(strata, "archive")
 
 
