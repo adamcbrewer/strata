@@ -27,6 +27,7 @@ pub use crate::app::navigation::{ColumnEntryCounts, CursorToggle, VisualKind, Vi
 mod deferred;
 mod directory_changes;
 mod loading;
+mod navigation_lifecycle;
 mod operation_events;
 mod operation_updates;
 mod publication;
@@ -890,6 +891,7 @@ pub struct Browser {
     validation_load: RefCell<Option<LoadHandle>>,
     deferred_reveal: RefCell<Option<(Location, Vec<Location>)>>,
     validation_generation: Cell<u64>,
+    navigation_lifecycle: navigation_lifecycle::NavigationLifecycle,
     navigation_cleanup: RefCell<Option<Box<dyn FnOnce()>>>,
     operation_provider: RefCell<Option<Rc<dyn OperationProvider>>>,
     operation_load: RefCell<Option<LoadHandle>>,
@@ -957,6 +959,7 @@ impl Browser {
             validation_load: RefCell::new(None),
             deferred_reveal: RefCell::new(None),
             validation_generation: Cell::new(0),
+            navigation_lifecycle: navigation_lifecycle::NavigationLifecycle::default(),
             navigation_cleanup: RefCell::new(None),
             operation_provider: RefCell::new(None),
             operation_load: RefCell::new(None),
@@ -1010,6 +1013,7 @@ impl Browser {
 
     pub fn clear_observer(&self) {
         self.observers.borrow_mut().clear();
+        self.clear_navigation_observers();
     }
 
     pub fn preferences(&self) -> ViewPreferences {
@@ -1094,14 +1098,20 @@ impl Browser {
         select_first: bool,
         reveal: Vec<Location>,
     ) {
+        let _update = self.navigation_update();
         let generation = self.bump_navigation_generation();
+        if self.navigation_generation() != generation {
+            return;
+        }
+        self.navigation_lifecycle.pending.set(Some(generation));
         let weak = Rc::downgrade(self);
         let pending_location = location.clone();
         let emit = Rc::new(move |result| {
             let Some(browser) = weak.upgrade() else {
                 return;
             };
-            if browser.validation_generation.get() != generation {
+            let _update = browser.navigation_update();
+            if !browser.finish_navigation_validation(generation) {
                 return;
             }
             match result {
@@ -1140,7 +1150,7 @@ impl Browser {
             }
         });
         let load = self.source.validate_location_async(location, emit);
-        if self.validation_generation.get() == generation {
+        if self.pending_navigation_generation() == Some(generation) {
             self.validation_load.replace(Some(load));
         }
     }
@@ -1155,10 +1165,14 @@ impl Browser {
 
     /// Invalidates work whose result is guarded by the navigation generation.
     pub(crate) fn bump_navigation_generation(&self) -> u64 {
+        let _update = self.navigation_update();
         let generation = self.validation_generation.get().saturating_add(1);
         self.validation_generation.set(generation);
-        self.validation_load.borrow_mut().take();
-        if let Some(cleanup) = self.navigation_cleanup.take() {
+        self.navigation_lifecycle.pending.set(None);
+        let load = self.validation_load.take();
+        let cleanup = self.navigation_cleanup.take();
+        drop(load);
+        if let Some(cleanup) = cleanup {
             cleanup();
         }
         generation
@@ -1262,6 +1276,7 @@ impl Browser {
     }
 
     fn reveal_validated(self: &Rc<Self>, directory: Location, targets: Vec<Location>) -> bool {
+        let _update = self.navigation_update();
         let Some(depth) = self.open_depth(&directory) else {
             self.navigate_for_selection(directory, LoadSelection::Target(targets));
             return false;
@@ -1282,6 +1297,7 @@ impl Browser {
         directory: Location,
         targets: &[Location],
     ) -> bool {
+        let _update = self.navigation_update();
         let Some(depth) = self.open_depth(&directory) else {
             return false;
         };
@@ -1294,6 +1310,7 @@ impl Browser {
     }
 
     fn activate_reveal_depth(self: &Rc<Self>, depth: usize) {
+        let _update = self.navigation_update();
         self.bump_navigation_generation();
         self.close_column(depth + 1);
         if self.active_depth() != Some(depth) {
@@ -1345,6 +1362,7 @@ impl Browser {
     }
 
     fn navigate_for_selection(self: &Rc<Self>, location: Location, selection: LoadSelection) {
+        let _update = self.navigation_update();
         if !self.source.allows_navigation(&location) {
             return;
         }
@@ -1399,6 +1417,7 @@ impl Browser {
         selection: LoadSelection,
         keep_parent_active: bool,
     ) {
+        let _update = self.navigation_update();
         self.deferred_reveal.take();
         self.bump_navigation_generation();
         if self.is_open_child(parent_depth, &location) {
@@ -1420,6 +1439,10 @@ impl Browser {
         }
 
         let generation = self.bump_navigation_generation();
+        if self.navigation_generation() != generation {
+            return;
+        }
+        self.navigation_lifecycle.pending.set(Some(generation));
         let weak = Rc::downgrade(self);
         let pending_location = location.clone();
         let parent_location = self.location_at(parent_depth);
@@ -1427,9 +1450,11 @@ impl Browser {
             let Some(browser) = weak.upgrade() else {
                 return;
             };
-            if browser.validation_generation.get() != generation
-                || browser.location_at(parent_depth) != parent_location
-            {
+            let _update = browser.navigation_update();
+            if !browser.finish_navigation_validation(generation) {
+                return;
+            }
+            if browser.location_at(parent_depth) != parent_location {
                 return;
             }
             match result {
@@ -1449,7 +1474,9 @@ impl Browser {
             }
         });
         let load = self.source.validate_location_async(location, emit);
-        self.validation_load.replace(Some(load));
+        if self.pending_navigation_generation() == Some(generation) {
+            self.validation_load.replace(Some(load));
+        }
     }
 
     fn descend_validated(
@@ -1552,12 +1579,16 @@ impl Browser {
     }
 
     pub fn escape(self: &Rc<Self>) {
+        let _update = self.navigation_update();
         if self.close_peek() || self.clear_active_selection() {
             return;
         }
 
         let closed = self.state.borrow_mut().close_deepest();
         if let Some((depth, position)) = closed {
+            if self.pending_navigation_generation().is_some() {
+                self.bump_navigation_generation();
+            }
             let len = depth + 1;
             self.loads.borrow_mut().truncate(len);
             self.monitors.borrow_mut().truncate(len);
@@ -1568,9 +1599,13 @@ impl Browser {
     }
 
     pub fn close_column(self: &Rc<Self>, depth: usize) {
+        let _update = self.navigation_update();
         self.close_peek();
         let closed = self.state.borrow_mut().close_from(depth);
         if let Some((parent_depth, position)) = closed {
+            if self.pending_navigation_generation().is_some() {
+                self.bump_navigation_generation();
+            }
             self.loads.borrow_mut().truncate(depth);
             self.monitors.borrow_mut().truncate(depth);
             self.truncate_deferred_from(depth);
@@ -3290,6 +3325,7 @@ impl Browser {
 
     /// The successful creation has already established the entry's type and location.
     pub(crate) fn reveal_created_entry(self: &Rc<Self>, depth: usize, position: usize) {
+        let _update = self.navigation_update();
         let Some(entry) = self.entry_at(depth, position) else {
             return;
         };
@@ -3463,6 +3499,7 @@ impl Browser {
     }
 
     fn restore_path(self: &Rc<Self>, path: NavigationPath) {
+        let _update = self.navigation_update();
         self.deferred_reveal.take();
         if path
             .locations()
@@ -3471,6 +3508,7 @@ impl Browser {
         {
             return;
         }
+        self.bump_navigation_generation();
         self.emit(BrowserEvent::NavigationStarting);
         self.close_peek();
         self.loads.borrow_mut().clear();

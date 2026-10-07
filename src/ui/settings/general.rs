@@ -293,6 +293,19 @@ fn append_browsing_options(content: &gtk::Box, manager: &Rc<PreferenceManager>) 
     ] {
         append_preference_switch(&search, manager, switch);
     }
+    append_search_exclusions_option(&search, manager);
+}
+
+fn append_search_exclusions_option(content: &gtk::Box, manager: &Rc<PreferenceManager>) {
+    let editor = super::exclusions::search_exclusions_control(manager);
+    let row = super::control_row(
+        "Global search exclusions",
+        "Exclude folder names or directory paths from global search.",
+        &editor,
+    );
+    row.add_css_class("settings-exclusions-row");
+    row.set_orientation(gtk::Orientation::Vertical);
+    content.append(&row);
 }
 
 fn append_preference_switch(
@@ -449,11 +462,9 @@ fn default_directory_text(path: Option<std::path::PathBuf>) -> String {
     }
 }
 
-fn abbreviate_home(path: &std::path::Path) -> String {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    if let Some(home) = home
-        && let Ok(rest) = path.strip_prefix(&home)
-    {
+pub(crate) fn abbreviate_home(path: &std::path::Path) -> String {
+    let home = glib::home_dir();
+    if let Ok(rest) = path.strip_prefix(&home) {
         format!("~/{}", rest.display())
     } else {
         path.display().to_string()

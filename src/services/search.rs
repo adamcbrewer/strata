@@ -51,6 +51,27 @@ const INDEX_TIME_BUDGET: Duration = Duration::from_secs(10);
 const INITIAL_DIRECTORY_BATCH: usize = 1;
 const MAX_PENDING_DIRECTORIES: usize = 4_096;
 
+#[derive(Clone, Copy, Debug)]
+struct TraversalBudget {
+    max_entries: usize,
+    max_depth: usize,
+    time_budget: Duration,
+    initial_directory_batch: usize,
+    max_pending_directories: usize,
+}
+
+impl TraversalBudget {
+    const fn standard() -> Self {
+        Self {
+            max_entries: MAX_INDEX_ENTRIES,
+            max_depth: MAX_INDEX_DEPTH,
+            time_budget: INDEX_TIME_BUDGET,
+            initial_directory_batch: INITIAL_DIRECTORY_BATCH,
+            max_pending_directories: MAX_PENDING_DIRECTORIES,
+        }
+    }
+}
+
 pub fn fold_for_search(text: &str) -> String {
     if text.is_ascii() {
         return text.to_ascii_lowercase();
@@ -253,6 +274,7 @@ struct RefreshState {
     roots: Vec<PathBuf>,
     hidden: bool,
     recursive: bool,
+    exclusions: SearchExclusions,
 }
 
 impl SharedIndex {
@@ -273,6 +295,7 @@ impl SharedIndex {
                 roots: Vec::new(),
                 hidden: false,
                 recursive: false,
+                exclusions: SearchExclusions::default(),
             }),
             refresh_owner: None,
             lifecycle: Mutex::new(IndexLifecycle {
@@ -351,8 +374,10 @@ impl SharedIndex {
 }
 
 mod directory;
+pub(crate) mod exclusions;
 mod pattern;
 
+pub(crate) use exclusions::SearchExclusions;
 pub(crate) use pattern::{filter_name_matches, filter_query_allows_typos};
 
 type NameScorer = fn(&SearchItem, &str) -> Option<i64>;
@@ -450,7 +475,10 @@ impl QueryScorer<'_> {
     }
 }
 
-type IndexRegistry = Vec<((Vec<PathBuf>, bool, bool), Weak<SharedIndex>)>;
+type IndexRegistry = Vec<(
+    (Vec<PathBuf>, bool, bool, SearchExclusions),
+    Weak<SharedIndex>,
+)>;
 static SHARED_INDEXES: OnceLock<Mutex<IndexRegistry>> = OnceLock::new();
 static REFRESH_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -498,6 +526,7 @@ pub fn index_filter(
         show_hidden,
         include_subfolders,
         SearchScorer::Name(filter_score_normalized),
+        Vec::new(),
     )
 }
 
@@ -515,6 +544,7 @@ pub fn index_paths(
             frecency: Arc::new(frecency),
             folders: None,
         },
+        Vec::new(),
     )
 }
 
@@ -532,20 +562,31 @@ pub fn index_folder_paths(
             frecency: Arc::new(frecency),
             folders: Some(Arc::new(refused)),
         },
+        Vec::new(),
     )
+}
+
+#[cfg(test)]
+pub fn index_trees(
+    roots: Vec<PathBuf>,
+    show_hidden: bool,
+) -> (SearchHandle, Receiver<SearchEvent>) {
+    index_trees_with_exclusions(roots, show_hidden, Vec::new())
 }
 
 /// Concurrent sessions share a snapshot until the last handle is dropped.
 /// Indexing and scoring run off the GTK thread.
-pub fn index_trees(
+pub fn index_trees_with_exclusions(
     roots: Vec<PathBuf>,
     show_hidden: bool,
+    exclusions: Vec<String>,
 ) -> (SearchHandle, Receiver<SearchEvent>) {
     index_scoped(
         roots,
         show_hidden,
         true,
         SearchScorer::Name(fuzzy_score_normalized),
+        exclusions,
     )
 }
 
@@ -554,13 +595,20 @@ fn index_scoped(
     show_hidden: bool,
     recursive: bool,
     scorer: SearchScorer,
+    exclusions: Vec<String>,
 ) -> (SearchHandle, Receiver<SearchEvent>) {
     let mut seen = HashSet::new();
     let roots: Vec<_> = roots
         .into_iter()
         .filter(|root| seen.insert(root.clone()))
         .collect();
-    let key = (roots.clone(), show_hidden, recursive);
+    let search_exclusions = SearchExclusions::from_strings(&exclusions);
+    let key = (
+        roots.clone(),
+        show_hidden,
+        recursive,
+        search_exclusions.clone(),
+    );
     let registry = SHARED_INDEXES.get_or_init(|| Mutex::new(Vec::new()));
     let mut registry = registry
         .lock()
@@ -580,10 +628,9 @@ fn index_scoped(
             index.clone(),
             roots,
             show_hidden,
-            MAX_INDEX_ENTRIES,
-            MAX_INDEX_DEPTH,
-            INDEX_TIME_BUDGET,
+            TraversalBudget::standard(),
             recursive,
+            search_exclusions,
         );
         index
     };
@@ -599,7 +646,7 @@ pub(crate) fn refresh_search_indexes_for_rename(from: &Path, to: &Path) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     registry.retain(|(_, index)| index.strong_count() > 0);
-    for ((roots, hidden, recursive), index) in registry.iter_mut() {
+    for ((roots, hidden, recursive, exclusions), index) in registry.iter_mut() {
         if !roots.iter().any(|root| {
             from.starts_with(root)
                 || to.starts_with(root)
@@ -616,7 +663,13 @@ pub(crate) fn refresh_search_indexes_for_rename(from: &Path, to: &Path) {
         let mut seen = HashSet::new();
         roots.retain(|root| seen.insert(root.clone()));
         if let Some(index) = index.upgrade() {
-            request_index_refresh(index, roots.clone(), *hidden, *recursive);
+            request_index_refresh(
+                index,
+                roots.clone(),
+                *hidden,
+                *recursive,
+                exclusions.clone(),
+            );
         }
     }
 }
@@ -626,6 +679,7 @@ fn request_index_refresh(
     roots: Vec<PathBuf>,
     hidden: bool,
     recursive: bool,
+    exclusions: SearchExclusions,
 ) {
     let mut refresh = index
         .refresh
@@ -635,6 +689,7 @@ fn request_index_refresh(
     refresh.roots = roots;
     refresh.hidden = hidden;
     refresh.recursive = recursive;
+    refresh.exclusions = exclusions;
     if refresh.running {
         return;
     }
@@ -670,7 +725,7 @@ fn refresh_index(index: &Arc<SharedIndex>) {
         let traversal = REFRESH_TRAVERSAL
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let (generation, roots, hidden, recursive) = {
+        let (generation, roots, hidden, recursive, exclusions) = {
             let mut refresh = index
                 .refresh
                 .lock()
@@ -684,6 +739,7 @@ fn refresh_index(index: &Arc<SharedIndex>) {
                 refresh.roots.clone(),
                 refresh.hidden,
                 refresh.recursive,
+                refresh.exclusions.clone(),
             )
         };
         index.cancel_initial_indexer.store(true, Ordering::Release);
@@ -703,6 +759,7 @@ fn refresh_index(index: &Arc<SharedIndex>) {
                     initial_directory_batch: INITIAL_DIRECTORY_BATCH,
                     max_pending_directories: MAX_PENDING_DIRECTORIES,
                 },
+                exclusions,
             );
         } else {
             directory::build_index(
@@ -711,6 +768,7 @@ fn refresh_index(index: &Arc<SharedIndex>) {
                 hidden,
                 MAX_INDEX_ENTRIES,
                 INDEX_TIME_BUDGET,
+                &exclusions,
             );
         }
         let mut refresh = index
@@ -772,9 +830,7 @@ fn index_trees_with_scheduler_budget(
     initial_directory_batch: usize,
     max_pending_directories: usize,
 ) -> (SearchHandle, Receiver<SearchEvent>) {
-    let index = Arc::new(SharedIndex::new());
-    build_index(
-        &index,
+    index_trees_with_scheduler_budget_and_exclusions(
         roots,
         show_hidden,
         TraversalBudget {
@@ -784,8 +840,43 @@ fn index_trees_with_scheduler_budget(
             initial_directory_batch,
             max_pending_directories,
         },
-    );
+        SearchExclusions::default(),
+    )
+}
+
+#[cfg(test)]
+fn index_trees_with_scheduler_budget_and_exclusions(
+    roots: Vec<PathBuf>,
+    show_hidden: bool,
+    budget: TraversalBudget,
+    exclusions: SearchExclusions,
+) -> (SearchHandle, Receiver<SearchEvent>) {
+    let index = Arc::new(SharedIndex::new());
+    build_index(&index, roots, show_hidden, budget, exclusions);
     start_search_session(index, SearchScorer::Name(fuzzy_score_normalized))
+}
+
+#[cfg(test)]
+pub(crate) fn index_trees_with_budget_and_exclusions(
+    roots: Vec<PathBuf>,
+    show_hidden: bool,
+    max_entries: usize,
+    max_depth: usize,
+    time_budget: Duration,
+    exclusions: Vec<String>,
+) -> (SearchHandle, Receiver<SearchEvent>) {
+    index_trees_with_scheduler_budget_and_exclusions(
+        roots,
+        show_hidden,
+        TraversalBudget {
+            max_entries,
+            max_depth,
+            time_budget,
+            initial_directory_batch: INITIAL_DIRECTORY_BATCH,
+            max_pending_directories: MAX_PENDING_DIRECTORIES,
+        },
+        SearchExclusions::from_strings(&exclusions),
+    )
 }
 
 fn start_search_session(
@@ -897,30 +988,25 @@ fn start_indexer(
     index: Arc<SharedIndex>,
     roots: Vec<PathBuf>,
     show_hidden: bool,
-    max_entries: usize,
-    max_depth: usize,
-    time_budget: Duration,
+    budget: TraversalBudget,
     recursive: bool,
+    exclusions: SearchExclusions,
 ) {
     let worker_index = index.clone();
     let worker = std::thread::Builder::new()
         .name("strata-search-index".into())
         .spawn(move || {
             if recursive {
-                build_index(
+                build_index(&worker_index, roots, show_hidden, budget, exclusions);
+            } else {
+                directory::build_index(
                     &worker_index,
                     roots,
                     show_hidden,
-                    TraversalBudget {
-                        max_entries,
-                        max_depth,
-                        time_budget,
-                        initial_directory_batch: INITIAL_DIRECTORY_BATCH,
-                        max_pending_directories: MAX_PENDING_DIRECTORIES,
-                    },
+                    budget.max_entries,
+                    budget.time_budget,
+                    &exclusions,
                 );
-            } else {
-                directory::build_index(&worker_index, roots, show_hidden, max_entries, time_budget);
             }
         });
     if let Err(error) = worker {
@@ -1020,14 +1106,6 @@ fn is_kernel_filesystem(path: &Path) -> bool {
         .any(|mount| path == Path::new(mount))
 }
 
-struct TraversalBudget {
-    max_entries: usize,
-    max_depth: usize,
-    time_budget: Duration,
-    initial_directory_batch: usize,
-    max_pending_directories: usize,
-}
-
 #[derive(Debug, Eq, PartialEq)]
 enum PathAdmission {
     Unique,
@@ -1055,6 +1133,7 @@ fn build_index(
     roots: Vec<PathBuf>,
     show_hidden: bool,
     budget: TraversalBudget,
+    exclusions: SearchExclusions,
 ) {
     let TraversalBudget {
         max_entries,
@@ -1086,6 +1165,10 @@ fn build_index(
     let mut pending_directory_count = 0_usize;
     let mut next_sequence = 0_u64;
     for root in roots {
+        let name = root.file_name().unwrap_or_default().to_string_lossy();
+        if exclusions.is_excluded(&root, &name, true) {
+            continue;
+        }
         if pending_directory_count >= max_pending_directories {
             coverage.directory_limit = true;
             continue;
@@ -1165,6 +1248,10 @@ fn build_index(
             }
             let file_type = entry.file_type();
             let is_directory = file_type.is_some_and(|kind| kind.is_dir());
+            let name = entry.file_name().to_string_lossy();
+            if exclusions.is_excluded(entry.path(), &name, is_directory) {
+                continue;
+            }
             // Structural entries are cheap within a branch so nested documents progress
             // before dense runs of regular files consume the shared entry budget.
             slice_work = slice_work.saturating_add(if is_directory { 1 } else { 8 });

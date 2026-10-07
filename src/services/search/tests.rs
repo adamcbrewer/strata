@@ -16,7 +16,7 @@ mod scope;
 use super::{
     PathAdmission, RefusedFolders, SearchEvent, SearchItem, admit_path, fuzzy_score_normalized,
     fuzzy_subsequence_score, index_folder_paths, index_tree, index_trees, index_trees_with_budget,
-    index_trees_with_scheduler_budget,
+    index_trees_with_budget_and_exclusions, index_trees_with_scheduler_budget,
 };
 
 fn score_path(path: &str, query: &str, root: &Path) -> Option<i64> {
@@ -886,4 +886,231 @@ fn index_reports_truncated_when_the_walker_discards_an_inaccessible_directory() 
             "Partial search — some folders could not be read"
         );
     }
+}
+
+#[test]
+fn excluded_nested_roots_leave_scheduler_capacity_for_visible_roots() {
+    let fixture = tempfile::tempdir().expect("search fixture");
+    let excluded = fixture.path().join("private-build/nested");
+    let visible = fixture.path().join("visible");
+    for root in [&excluded, &visible] {
+        fs::create_dir_all(root).expect("search root");
+        fs::write(root.join("needle.txt"), "fixture").expect("search file");
+    }
+    let (search, events) = super::index_trees_with_scheduler_budget_and_exclusions(
+        vec![excluded, visible.clone()],
+        false,
+        super::TraversalBudget {
+            max_entries: 1,
+            max_depth: 64,
+            time_budget: Duration::from_secs(10),
+            initial_directory_batch: 1,
+            max_pending_directories: 1,
+        },
+        super::SearchExclusions::from_strings(&["private-build".into()]),
+    );
+    search.query("needle");
+    let Some(SearchEvent::Results {
+        items, coverage, ..
+    }) = wait_for_results(&events)
+    else {
+        panic!("expected completed search");
+    };
+    assert_eq!(
+        items.iter().map(|item| &item.path).collect::<Vec<_>>(),
+        vec![&visible.join("needle.txt")]
+    );
+    assert!(
+        !coverage.is_partial(),
+        "excluded roots must not consume traversal capacity"
+    );
+}
+
+#[test]
+fn index_excludes_configured_folder_names() {
+    let root = unique_fixture_root("excluded-folder-name");
+    let venv_dir = root.join("project/private-build");
+    let nested_venv_dir = root.join("project/sub/PRIVATE-BUILD");
+    let src_dir = root.join("project/src");
+    fs::create_dir_all(&venv_dir).expect("create fixture venv");
+    fs::create_dir_all(&nested_venv_dir).expect("create fixture nested venv");
+    fs::create_dir_all(&src_dir).expect("create fixture src");
+
+    fs::write(venv_dir.join("lib.py"), b"excluded").expect("write venv file");
+    fs::write(nested_venv_dir.join("lib.py"), b"excluded").expect("write nested venv file");
+    fs::write(src_dir.join("main.py"), b"included").expect("write src file");
+
+    let (search, events) = index_trees_with_budget_and_exclusions(
+        vec![root.clone()],
+        true,
+        usize::MAX,
+        64,
+        Duration::from_secs(10),
+        vec!["private-build".to_string()],
+    );
+    search.query("lib.py");
+    let event = wait_for_results(&events);
+
+    search.query("main.py");
+    let main_event = wait_for_results(&events);
+
+    drop(search);
+    fs::remove_dir_all(&root).expect("remove fixture");
+
+    let Some(SearchEvent::Results { items, .. }) = event else {
+        panic!("expected search event");
+    };
+    assert!(
+        items.is_empty(),
+        "files inside custom excluded folders should not be indexed, found: {items:?}"
+    );
+
+    let Some(SearchEvent::Results {
+        items: main_items, ..
+    }) = main_event
+    else {
+        panic!("expected search event for main");
+    };
+    assert!(
+        main_items.iter().any(|item| item.name == "main.py"),
+        "files outside excluded folders must be indexed"
+    );
+}
+
+#[test]
+fn index_excludes_configured_specific_directory() {
+    let root = unique_fixture_root("excluded-directory");
+    let excluded_dir = root.join("build");
+    let included_dir = root.join("nested/build");
+    fs::create_dir_all(&excluded_dir).expect("create excluded dir");
+    fs::create_dir_all(&included_dir).expect("create included dir");
+
+    fs::write(excluded_dir.join("target.txt"), b"excluded").expect("write file");
+    fs::write(included_dir.join("target.txt"), b"included").expect("write file");
+
+    let (search, events) = index_trees_with_budget_and_exclusions(
+        vec![root.clone()],
+        false,
+        usize::MAX,
+        64,
+        Duration::from_secs(10),
+        vec![excluded_dir.to_string_lossy().to_string()],
+    );
+    search.query("target.txt");
+    let event = wait_for_results(&events);
+
+    drop(search);
+    fs::remove_dir_all(&root).expect("remove fixture");
+
+    let Some(SearchEvent::Results { items, .. }) = event else {
+        panic!("expected search event");
+    };
+    assert_eq!(
+        items.len(),
+        1,
+        "only the file in the non-excluded build directory should match"
+    );
+    assert_eq!(items[0].path, included_dir.join("target.txt"));
+}
+
+#[test]
+fn index_preserves_sibling_directories_when_one_is_excluded() {
+    let root = unique_fixture_root("excluded-sibling-preservation");
+    let parent = root.join("parent");
+    let excluded_child = parent.join("excluded_child");
+    let sibling_child = parent.join("sibling_child");
+    fs::create_dir_all(&excluded_child).expect("create excluded child");
+    fs::create_dir_all(&sibling_child).expect("create sibling child");
+
+    fs::write(excluded_child.join("target.txt"), b"excluded").expect("write file");
+    fs::write(sibling_child.join("target.txt"), b"included").expect("write file");
+
+    let (search, events) = index_trees_with_budget_and_exclusions(
+        vec![root.clone()],
+        false,
+        usize::MAX,
+        64,
+        Duration::from_secs(10),
+        vec![excluded_child.to_string_lossy().to_string()],
+    );
+    search.query("target.txt");
+    let event = wait_for_results(&events);
+
+    drop(search);
+    fs::remove_dir_all(&root).expect("remove fixture");
+
+    let Some(SearchEvent::Results { items, .. }) = event else {
+        panic!("expected search event");
+    };
+    assert_eq!(
+        items.len(),
+        1,
+        "sibling directory work must not be dropped when one sibling is excluded"
+    );
+    assert_eq!(items[0].path, sibling_child.join("target.txt"));
+}
+
+#[test]
+fn index_tolerates_glob_metacharacters_in_exclusions() {
+    let root = unique_fixture_root("glob-metachars");
+    let weird_dir = root.join("project/[build]");
+    let venv_dir = root.join("project/.venv");
+    let src_dir = root.join("project/src");
+    fs::create_dir_all(&weird_dir).expect("create weird dir");
+    fs::create_dir_all(&venv_dir).expect("create venv dir");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+
+    fs::write(weird_dir.join("weird.txt"), b"excluded").expect("write weird file");
+    fs::write(venv_dir.join("venv.txt"), b"venv excluded").expect("write venv file");
+    fs::write(src_dir.join("main.txt"), b"main included").expect("write main file");
+
+    let (search, events) = index_trees_with_budget_and_exclusions(
+        vec![root.clone()],
+        true,
+        usize::MAX,
+        64,
+        Duration::from_secs(10),
+        vec!["[build]".to_string()],
+    );
+    search.query("main.txt");
+    let main_event = wait_for_results(&events);
+
+    search.query("weird.txt");
+    let weird_event = wait_for_results(&events);
+
+    search.query("venv.txt");
+    let venv_event = wait_for_results(&events);
+
+    drop(search);
+    fs::remove_dir_all(&root).expect("remove fixture");
+
+    let Some(SearchEvent::Results {
+        items: main_items, ..
+    }) = main_event
+    else {
+        panic!("expected main event");
+    };
+    assert!(!main_items.is_empty(), "main file should be found");
+
+    let Some(SearchEvent::Results {
+        items: weird_items, ..
+    }) = weird_event
+    else {
+        panic!("expected weird event");
+    };
+    assert!(
+        weird_items.is_empty(),
+        "folder with glob brackets must be properly excluded"
+    );
+
+    let Some(SearchEvent::Results {
+        items: venv_items, ..
+    }) = venv_event
+    else {
+        panic!("expected venv event");
+    };
+    assert!(
+        venv_items.is_empty(),
+        "built-in .venv prune must still work even when user exclusion has unescaped glob brackets"
+    );
 }

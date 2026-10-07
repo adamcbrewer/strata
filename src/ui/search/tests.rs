@@ -479,6 +479,77 @@ fn global_search_combines_home_and_drives_and_refreshes_mounts() {
     );
 }
 
+#[test]
+fn global_search_reads_saved_exclusions_before_settings_and_on_each_window_invocation() {
+    crate::test_support::gtk_test(
+        "ui::search::tests::global_search_reads_saved_exclusions_before_settings_and_on_each_window_invocation",
+        || {
+            let config = glib::user_config_dir().join("strata");
+            std::fs::create_dir_all(&config).expect("isolated config directory");
+            std::fs::write(
+                config.join("settings.toml"),
+                "search_exclusions = ['private-build']\n",
+            )
+            .expect("saved exclusion");
+            let fixture = tempfile::tempdir().expect("search fixture");
+            let root = fixture.path();
+            std::fs::create_dir(root.join("private-build")).expect("excluded directory");
+            std::fs::write(root.join("private-build/needle-hidden.txt"), "hidden")
+                .expect("excluded file");
+            std::fs::write(root.join("needle-visible.txt"), "visible").expect("visible file");
+            let dialogs: Vec<_> = (0..2)
+                .map(|_| {
+                    let dialog =
+                        SearchDialog::new(Rc::new(|_| {}), Rc::new(|_| {}), Rc::new(|| {}));
+                    let window = gtk::Window::builder().child(&dialog.widget()).build();
+                    window.present();
+                    (dialog, window)
+                })
+                .collect();
+            let manager = super::super::preferences::PreferenceManager::shared();
+            for excluded in [true, false, true] {
+                if !excluded || manager.search_exclusions().is_empty() {
+                    manager.set_search_exclusions(if excluded {
+                        vec!["private-build".into()]
+                    } else {
+                        Vec::new()
+                    });
+                }
+                for (dialog, _) in &dialogs {
+                    dialog.show(vec![root.to_path_buf()], false);
+                    dialog.state.field.set_text("needle");
+                    wait_until(|| {
+                        !dialog.state.indexing_spinner.is_visible()
+                            && dialog.state.visible_results.borrow().len()
+                                == if excluded { 1 } else { 2 }
+                    });
+                    assert!(
+                        dialog
+                            .state
+                            .visible_results
+                            .borrow()
+                            .iter()
+                            .any(|item| item.path == root.join("needle-visible.txt"))
+                    );
+                    assert_eq!(
+                        dialog
+                            .state
+                            .visible_results
+                            .borrow()
+                            .iter()
+                            .any(|item| item.path == root.join("private-build/needle-hidden.txt")),
+                        !excluded
+                    );
+                }
+            }
+            for (dialog, window) in dialogs {
+                hide(&dialog.state);
+                window.destroy();
+            }
+        },
+    );
+}
+
 fn wait_until(condition: impl Fn() -> bool) {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while !condition() {

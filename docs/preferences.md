@@ -64,6 +64,7 @@ control that might be midway through synchronization.
 | Cross-device drag and drop | Drop dispatch reads the current Copy, Move, or Ask strategy; unresolved volume lookups follow the same cross-device policy. |
 | Sort key/direction, folders-first | Shared defaults for new columns; an existing column keeps its own sort, selection and navigation. Explicit field sorting updates the persisted defaults. Camera Photos libraries instead open in column-local Device order (see below). |
 | Type-to-search, opening search results directly | Keyboard/search actions read the current manager value at dispatch. |
+| Global search exclusions | Each global-search invocation reads the current rules before indexing, including before Settings opens. Existing search snapshots keep their rules until reopened. Exclusion editors synchronize across windows. Pane filters, 10xer path search, folder-history search, and destination pickers retain their explicit browsing scope and ignore these rules. |
 | 10xer mode | Interactive browsers and the portal file chooser bind pane Close/filter/refresh/sort chrome and the Yazi-style keymap at construction, including lazily rebuilt views. Window Search hides in interactive browsers. Window Close, chooser Accept/Cancel, and List column headings stay. Unclaimed letter commands return focus from non-text window chrome to the listing; text fields, menus, and previews retain their own input. Off by default; toggle with `Ctrl+Shift+M` or Settings → General → Browsing. Enabling shows a brief non-interactive splash that respects Reduce motion; reopening an already-enabled window does not replay it. |
 | Include subfolders | Every pane filter binds at construction, including lazy view rebuilds. Enabled by default; disabling indexes only immediate files and folders, without traversing descendants. Live changes cancel pending queries and invalidate old result streams before refreshing the active filter. Global search remains recursive. 10xer mode ignores it: entering or leaving the mode re-runs active filters in the new scope. |
 | Element glow | Shared semantic glow color is applied by `ThemeManager` when the appearance preferences change, before Settings opens and live across windows, dialogs, menus, and rebuilt views. Focus outlines and ordinary depth shadows are preserved. The video preview's ambient light, and the band it needs around the frame, follow the same switch live. |
@@ -225,6 +226,19 @@ selected, it uses "Sep 24, 2026, 9:30 PM"; ISO 8601 and Long retain their select
 formats. This applies both to cached timestamps shown when the dialog opens and
 to asynchronously loaded file/folder metadata. Open Properties dialogs follow
 format changes live, just like lists and previews.
+
+## Global search exclusions
+
+In **Settings → General → Search & filtering → Global search exclusions**, enter
+a folder name or absolute directory path and press **Enter** or **Add**, or use
+**Browse…** to select a directory. The scrollable list below the form shows saved
+exclusions, with a remove button for each. Folder names match case-insensitively
+anywhere in the tree; directory paths are
+case-sensitive and exclude only that subtree. `~/` expands to home. Folder names
+are literal, not glob patterns. Built-in tool/cache exclusions remain in effect.
+Rules are stored as `search_exclusions`; invalid saved rules are ignored. Root,
+the entire home directory, relative paths, and paths containing `..` are rejected.
+Changes apply the next time global search opens, across all windows.
 
 ## Filter scope
 

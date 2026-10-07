@@ -141,7 +141,20 @@ impl BrowserView {
     }
 
     pub fn confirm_targets_delete(&self, permanent: bool) -> bool {
-        let entries = self.command_targets();
+        let mut entries = self.command_targets();
+        if entries.is_empty()
+            && self.selected_search_results().is_none()
+            && self.view_mode() == crate::ui::browser_modes::BrowserMode::Columns
+            && self.focused_listing_depth() == self.state.browser.active_depth()
+            && self.focused_listing_depth().is_some_and(|depth| {
+                self.state
+                    .browser
+                    .column_snapshot(depth)
+                    .is_some_and(|column| column.count == 0)
+            })
+        {
+            entries = self.state.browser.deletion_entries();
+        }
         if entries.is_empty() {
             return false;
         }

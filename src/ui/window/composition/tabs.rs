@@ -171,12 +171,9 @@ impl TabWindow {
         self.tabs.borrow_mut().push(tab);
         self.strip.add(self, id, &content.browser);
         let weak = Rc::downgrade(self);
-        let browser = content.browser.downgrade();
-        content.browser.browser().observe(move |_| {
-            if let (Some(state), Some(browser)) = (weak.upgrade(), browser.upgrade()) {
-                state
-                    .strip
-                    .label(id, &tab_label(browser.browser().active_location().as_ref()));
+        content.browser.observe_tab_location(move |location| {
+            if let Some(state) = weak.upgrade() {
+                state.strip.label(id, &tab_label(location));
             }
         });
         if id == 1 {

@@ -157,6 +157,7 @@ fn relocated_multi_root_indexes_follow_later_child_renames_and_new_sessions() {
             false,
             recursive,
             SearchScorer::Name(fuzzy_score_normalized),
+            Vec::new(),
         );
         handle.query("needle");
         let expected = if recursive {
@@ -185,6 +186,7 @@ fn relocated_multi_root_indexes_follow_later_child_renames_and_new_sessions() {
             false,
             recursive,
             SearchScorer::Name(fuzzy_score_normalized),
+            Vec::new(),
         );
         assert!(
             Arc::ptr_eq(&handle.index, &second.index),
@@ -213,6 +215,45 @@ fn relocated_multi_root_indexes_follow_later_child_renames_and_new_sessions() {
         await_paths(&events, root, &expected);
         await_paths(&second_events, root, &expected);
     }
+}
+
+#[test]
+fn global_exclusions_survive_rename_refresh_without_leaking_into_folder_search() {
+    let fixture = tempfile::tempdir().expect("fixture");
+    let root = fixture.path();
+    fs::create_dir(root.join("private-build")).expect("excluded directory");
+    fs::write(root.join("private-build/needle-hidden.txt"), "hidden").expect("excluded file");
+    fs::write(root.join("needle.txt"), "visible").expect("visible file");
+    let (global, global_events) = index_trees_with_exclusions(
+        vec![root.to_path_buf()],
+        false,
+        vec!["private-build".into()],
+    );
+    let (folder, folder_events) = index_filter(root.to_path_buf(), false, true);
+    global.query("needle");
+    folder.query("needle");
+    await_paths(&global_events, root, &["needle.txt"]);
+    await_paths(
+        &folder_events,
+        root,
+        &["needle.txt", "private-build/needle-hidden.txt"],
+    );
+    fs::rename(root.join("needle.txt"), root.join("needle-renamed.txt")).expect("rename file");
+    refresh_search_indexes_for_rename(&root.join("needle.txt"), &root.join("needle-renamed.txt"));
+    await_paths(&global_events, root, &["needle-renamed.txt"]);
+    await_paths(
+        &folder_events,
+        root,
+        &["needle-renamed.txt", "private-build/needle-hidden.txt"],
+    );
+    let (unexcluded, events) =
+        index_trees_with_exclusions(vec![root.to_path_buf()], false, Vec::new());
+    unexcluded.query("needle");
+    await_paths(
+        &events,
+        root,
+        &["needle-renamed.txt", "private-build/needle-hidden.txt"],
+    );
 }
 
 #[test]
@@ -254,7 +295,13 @@ fn refreshed_index_rejects_late_original_batches_and_rescores_smaller_snapshots(
         start_search_session(index.clone(), SearchScorer::Name(fuzzy_score_normalized));
     handle.query("needle");
     await_paths(&events, root, &["needle.txt", "needle-stale.txt"]);
-    request_index_refresh(index.clone(), vec![root.to_path_buf()], false, true);
+    request_index_refresh(
+        index.clone(),
+        vec![root.to_path_buf()],
+        false,
+        true,
+        SearchExclusions::default(),
+    );
     await_paths(&events, root, &["needle-renamed.txt"]);
     let mut late_batch = vec![SearchItem::new(root.join("needle.txt"), root, false)];
     append_index_items(&index, &mut late_batch, false, SearchCoverage::default());

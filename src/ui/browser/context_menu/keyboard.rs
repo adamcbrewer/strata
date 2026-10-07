@@ -63,6 +63,10 @@ impl NativeMenuNavigation {
         self.pointer_position.set(self.pointer_position());
     }
 
+    pub(super) fn preserve_submenu_navigation(&self) {
+        self.keyboard_navigation();
+    }
+
     fn pointer_position(&self) -> Option<(f64, f64)> {
         let popover = self.popover.upgrade()?;
         let window = popover.root()?.downcast::<gtk::Window>().ok()?;

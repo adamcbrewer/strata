@@ -121,7 +121,7 @@ fn player_recorder(mime_type: &str, output: &std::path::Path) {
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{0}.pending' && mv '{0}.pending' '{0}'\n",
             output.display()
         ),
     )

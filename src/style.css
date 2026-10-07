@@ -4133,9 +4133,14 @@ textview > popover.menu > contents > scrolledwindow > viewport > stack {
   font-weight: 700;
 }
 
-.item-context-summary {
+.item-context-summary,
+.actions-context-popover label.separator {
   color: @strata_dim_text;
   font-size: 0.82em;
+}
+
+.actions-context-popover label.separator {
+  padding: 4px 8px;
 }
 
 .actions-context-popover separator,
@@ -4413,13 +4418,15 @@ colorchooser colorswatch overlay {
 }
 
 .actions-context-popover modelbutton,
-.actions-context-popover button.model {
+.actions-context-popover button.model,
+.actions-context-popover label.separator {
   margin-left: 8px;
   margin-right: 8px;
 }
 
 .actions-submenu modelbutton,
-.actions-submenu button.model {
+.actions-submenu button.model,
+.actions-submenu label.separator {
   margin: 0;
 }
 
@@ -5934,6 +5941,20 @@ two-column presentation. */
 .settings-dialog .settings-option:disabled,
 .settings-dialog .theme-library:disabled {
   opacity: 0.45;
+}
+
+.settings-exclusions-list {
+  background: @strata_bg;
+  border: 1px solid alpha(@strata_border, 0.55);
+  border-radius: 8px;
+}
+
+.settings-exclusion-row {
+  padding: 6px 8px;
+}
+
+.settings-exclusion-row + .settings-exclusion-row {
+  border-top: 1px solid alpha(@strata_border, 0.35);
 }
 
 .settings-choice {

@@ -62,6 +62,7 @@ mod preview;
 mod progress;
 mod properties;
 mod result_selection;
+mod tab_location;
 mod transfer;
 mod trash;
 
@@ -198,6 +199,7 @@ pub(super) struct ViewState {
     /// True only while a column row gesture is writing the selection model.
     /// Focus echoes of the cursor are not pointer-owned.
     pointer_owns_selection: Cell<bool>,
+    tab_location: RefCell<tab_location::TabLocation>,
     column_resizing: Cell<bool>,
     horizontal_scroll_generation: Rc<Cell<u64>>,
     suppress_focus_scroll: Cell<bool>,
@@ -582,6 +584,7 @@ impl BrowserView {
             context_menu_focus: RefCell::new(None),
             input_ownership: RefCell::new(super::input_ownership::InputOwnership::default()),
             pointer_owns_selection: Cell::new(false),
+            tab_location: RefCell::new(tab_location::TabLocation::default()),
             column_resizing: Cell::new(false),
             horizontal_scroll_generation: Rc::new(Cell::new(0)),
             suppress_focus_scroll: Cell::new(false),
@@ -708,9 +711,16 @@ impl BrowserView {
         // The observer owns the view state while its window is alive. The window clears
         // the observer on destruction to break this deliberate lifecycle cycle.
         let observer_state = state.clone();
-        state
-            .browser
-            .observe(move |event| observer_state.handle(event));
+        state.browser.observe(move |event| {
+            observer_state.handle(event);
+            observer_state.refresh_tab_location();
+        });
+        let weak_state = Rc::downgrade(&state);
+        state.browser.observe_navigation(move || {
+            if let Some(state) = weak_state.upgrade() {
+                state.refresh_tab_location();
+            }
+        });
 
         let click = gtk::GestureClick::new();
         click.set_button(0);
@@ -1488,6 +1498,7 @@ impl BrowserView {
         // an in-progress history restore, so the command has to cancel it first.
         self.state.mode_views.borrow_mut().cancel_list_restore();
         self.state.sync_mode_selection();
+        self.state.cancel_tab_location_hold();
         self.state.refresh_destination_style();
     }
 

@@ -884,12 +884,16 @@ impl NavigationState {
             column.selected_locations.remove(location);
         }
         column.selected = if selected_was_removed {
-            if replace_selection && !column.entries.is_empty() {
-                let position = retained_before_selected.min(column.entries.len() - 1);
-                column
-                    .selected_locations
-                    .insert(column.entries[position].location.clone());
-                Some(position)
+            if replace_selection {
+                let replacement = column.visible_neighbor(retained_before_selected);
+                if !self.preserve_fill_on_removal
+                    && let Some(position) = replacement
+                {
+                    column
+                        .selected_locations
+                        .insert(column.entries[position].location.clone());
+                }
+                replacement
             } else {
                 None
             }
@@ -962,8 +966,8 @@ impl NavigationState {
                 if selected_was_removed && replace_selection {
                     selected_location = removed_position.and_then(|position| {
                         column
-                            .entries
-                            .get(position.min(column.entries.len().saturating_sub(1)))
+                            .visible_neighbor(position)
+                            .and_then(|index| column.entries.get(index))
                             .map(|entry| entry.location.clone())
                     });
                     if !self.preserve_fill_on_removal
@@ -2285,6 +2289,14 @@ pub enum CursorToggle {
 }
 
 impl ColumnState {
+    fn visible_neighbor(&self, position: usize) -> Option<usize> {
+        let visible =
+            |&index: &usize| self.preferences.show_hidden || !self.entries[index].is_hidden;
+        (position..self.entries.len())
+            .find(visible)
+            .or_else(|| (0..position.min(self.entries.len())).rev().find(visible))
+    }
+
     fn invalidate_entry_indexes(&mut self) {
         self.entry_counts.set(None);
         self.metadata_positions = None;

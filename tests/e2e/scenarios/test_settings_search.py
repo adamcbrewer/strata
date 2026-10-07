@@ -100,6 +100,45 @@ def test_settings_search_filters_navigates_and_clears(strata, width):
     )
     strata.pointer.click(search)
     strata.keyboard.press("ctrl+a")
+    strata.keyboard.type_text("exclusions")
+    exclusion = strata.wait(
+        lambda: strata.window.find(role="text", name="Search exclusion"),
+        "inline exclusion form is directly available in Settings",
+    )
+    if width == 640:
+        strata.pointer.click(exclusion)
+        strata.wait(
+            lambda: strata.window.find(role="text", name="Search settings") is None,
+            "compact search closes before editing exclusions",
+        )
+    strata.pointer.click(exclusion)
+    strata.keyboard.type_text("private-build")
+    strata.keyboard.press("Return")
+    remove = strata.wait(
+        lambda: strata.window.find(role="button", name="Remove exclusion private-build"),
+        "exclusion added inline with Enter",
+    )
+    strata.wait(
+        lambda: strata.environment.read_preferences().get("search_exclusions") == '["private-build"]',
+        "inline exclusion persists",
+    )
+    strata.pointer.click(remove)
+    strata.wait(
+        lambda: strata.window.find(role="button", name="Remove exclusion private-build") is None,
+        "exclusion removed inline",
+    )
+    strata.wait(
+        lambda: "search_exclusions" not in strata.environment.read_preferences(),
+        "removing the last exclusion persists",
+    )
+    if width == 640:
+        strata.pointer.click(strata.window.find(role="button", name="Search settings"))
+    search = strata.wait(
+        lambda: strata.window.find(role="text", name="Search settings"),
+        "settings search after editing exclusions",
+    )
+    strata.pointer.click(search)
+    strata.keyboard.press("ctrl+a")
     strata.keyboard.type_text("unfindablequantumsetting")
     strata.wait(
         lambda: strata.window.find(role="label", name="No settings match your search."),

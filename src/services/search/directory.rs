@@ -11,6 +11,7 @@ pub(super) fn build_index(
     show_hidden: bool,
     max_entries: usize,
     time_budget: Duration,
+    exclusions: &SearchExclusions,
 ) {
     let start = Instant::now();
     let mut last_publish = start;
@@ -63,6 +64,11 @@ pub(super) fn build_index(
                 kind,
                 EntryKind::Directory | EntryKind::DirectorySymbolicLink
             );
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy();
+            if exclusions.is_excluded(&path, &name, is_directory) {
+                continue;
+            }
             let mode = if is_directory {
                 MetadataValue::Unknown
             } else {

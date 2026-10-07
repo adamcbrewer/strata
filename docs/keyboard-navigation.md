@@ -29,6 +29,10 @@ state. Tabs are in-memory only. Appearance preferences and the clipboard remain
 shared. File operations prevent closing their tab or window until they finish
 or are cancelled.
 
+Tab names follow the active directory, not a child column shown only as a keyboard
+preview. A pending single-click folder activation keeps the previous tab name until
+navigation resolves; cancelled clicks and drags restore normal focus-based naming.
+
 The Material-style strip appears when there is more than one tab. The plus and
 window-close controls move into it and return to the normal header when only
 one tab remains. Scroll the strip horizontally (or use the wheel) when it

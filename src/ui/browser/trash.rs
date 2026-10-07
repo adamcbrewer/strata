@@ -98,7 +98,6 @@ fn restore_error_summary(errors: &[String]) -> String {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DeleteDialog {
     Permanent,
-    PermanentCancelFirst,
     Trash,
 }
 
@@ -735,7 +734,7 @@ impl ViewState {
             return;
         }
         let kind = if permanent {
-            DeleteDialog::PermanentCancelFirst
+            DeleteDialog::Permanent
         } else {
             DeleteDialog::Trash
         };
@@ -760,7 +759,6 @@ impl ViewState {
 
     fn show_delete_dialog(self: &Rc<Self>, entries: Vec<FileEntry>, kind: DeleteDialog) {
         let trash = kind == DeleteDialog::Trash;
-        let cancel_first = kind == DeleteDialog::PermanentCancelFirst;
         let Some(ModalHost {
             overlay: window_overlay,
             blurred_root,
@@ -926,7 +924,6 @@ impl ViewState {
         let escaped_root = blurred_root;
         let escaped_browser = self.browser.clone();
         let focused_cancel = cancel.clone();
-        let focused_cancel_initial = cancel.clone();
         let focused_confirm = confirm.clone();
         let enter_buttons = [cancel, confirm.clone(), close];
         keys.connect_key_pressed(move |_, key, _, modifiers| {
@@ -969,11 +966,7 @@ impl ViewState {
             }
         });
         layer.add_controller(keys);
-        if cancel_first {
-            focus_button(&focused_cancel_initial);
-        } else {
-            focus_button(&confirm);
-        }
+        focus_button(&confirm);
         if trash {
             return;
         }

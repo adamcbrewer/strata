@@ -25,6 +25,7 @@ mod tests;
 mod about;
 mod actions;
 mod bindings;
+mod exclusions;
 mod general;
 mod search;
 mod theme;
@@ -555,7 +556,9 @@ fn reflow_settings(
             .last_child()
             .is_some_and(|child| child.is::<gtk::Switch>());
         // Short numeric controls can stay beside wrapping copy after other rows stack.
-        let stack_row = if row.has_css_class("settings-renderer-row") {
+        let stack_row = if row.has_css_class("settings-renderer-row")
+            || row.has_css_class("settings-exclusions-row")
+        {
             true
         } else if row.has_css_class("settings-text-size-row") {
             stack_text_size
