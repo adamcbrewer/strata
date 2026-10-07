@@ -4133,9 +4133,14 @@ textview > popover.menu > contents > scrolledwindow > viewport > stack {
   font-weight: 700;
 }
 
-.item-context-summary {
+.item-context-summary,
+.actions-context-popover label.separator {
   color: @strata_dim_text;
   font-size: 0.82em;
+}
+
+.actions-context-popover label.separator {
+  padding: 4px 8px;
 }
 
 .actions-context-popover separator,
@@ -4413,13 +4418,15 @@ colorchooser colorswatch overlay {
 }
 
 .actions-context-popover modelbutton,
-.actions-context-popover button.model {
+.actions-context-popover button.model,
+.actions-context-popover label.separator {
   margin-left: 8px;
   margin-right: 8px;
 }
 
 .actions-submenu modelbutton,
-.actions-submenu button.model {
+.actions-submenu button.model,
+.actions-submenu label.separator {
   margin: 0;
 }
 

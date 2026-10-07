@@ -399,6 +399,7 @@ pub(super) fn set_thumbnail_or_icon(
     icon_size: i32,
     thumbnail_size: i32,
 ) {
+    super::file_providers::bind(image, entry.location.native_path());
     let Some(path) = entry.local_thumbnail_path() else {
         if entry.location.backend_name() == "gphoto2"
             && !entry.is_directory()
@@ -464,6 +465,7 @@ pub(super) fn set_thumbnail_or_icon_for_path(
     icon_size: i32,
     thumbnail_size: i32,
 ) {
+    super::file_providers::bind(image, Some(path));
     set_thumbnail_for_path(ThumbnailRequest {
         image,
         path,
