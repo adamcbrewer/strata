@@ -229,7 +229,12 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
                     return Err(message);
                 }
             };
-            (png, None)
+            fs::write(
+                output.with_file_name("result.model"),
+                serde_json::to_vec(&png.mesh).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            (png.png, None)
         }
         _ => return Err("Unknown preview helper operation".to_owned()),
     };
