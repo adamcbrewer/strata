@@ -2324,6 +2324,25 @@ impl PreviewState {
         });
         scroll.add_controller(zoom_scroll);
 
+        let reset = gio::SimpleAction::new("reset-zoom", None);
+        let weak_scroll = scroll.downgrade();
+        let zoom_for_reset = zoom.clone();
+        let page_width_for_reset = page_width.clone();
+        let visible_pages_for_reset = visible_pages.clone();
+        reset.connect_activate(move |_, _| {
+            let Some(scroll) = weak_scroll.upgrade() else {
+                return;
+            };
+            zoom_for_reset.set(PDF_MIN_ZOOM);
+            let width = pdf_page_width(&scroll, PDF_MIN_ZOOM);
+            page_width_for_reset.set(width);
+            resize_pdf_pages(&visible_pages_for_reset.borrow(), width);
+            set_adjustment_value(&scroll.hadjustment(), 0.0);
+        });
+        let actions = gio::SimpleActionGroup::new();
+        actions.add_action(&reset);
+        scroll.insert_action_group("pdf", Some(&actions));
+
         scroll.set_focusable(true);
         scroll.set_cursor_from_name(Some("grab"));
         let drag_origin = Rc::new(Cell::new((0.0, 0.0)));

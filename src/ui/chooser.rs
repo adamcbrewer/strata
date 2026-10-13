@@ -2323,6 +2323,9 @@ fn install_shortcuts(
         {
             return glib::Propagation::Proceed;
         }
+        if preview.handle_pdf_key(press) {
+            return glib::Propagation::Stop;
+        }
         if let Some(result) = tenxer.handle(press) {
             return result;
         }

@@ -646,6 +646,68 @@ def test_pdf_preview_selects_and_copies_text(strata, fixture_tree):
     assert "Hello PDF text" in table_clipboard_text(strata)
 
 
+@pytest.mark.preferences(single_click_previews=False, text_size=21)
+@pytest.mark.parametrize("gesture", ["wheel", "reset"])
+@pytest.mark.parametrize("tenxer", [
+    pytest.param(False, marks=pytest.mark.preferences(tenxer_mode=False), id="default"),
+    pytest.param(True, marks=pytest.mark.preferences(tenxer_mode=True), id="tenxer"),
+])
+def test_pdf_zoom_keeps_interface_text_size(strata, fixture_tree, gesture, tenxer, request):
+    from harness.artifacts import ArtifactCollector
+    from harness.interaction import MODIFIER_KEYSYMS
+
+    fixture_tree.path("page.pdf").write_bytes(
+        (Path(__file__).resolve().parents[2] / "fixtures" / "documents" / "text.pdf").read_bytes()
+    )
+    strata.select_entry_with_keyboard("page.pdf")
+    strata.keyboard.press("i" if tenxer else "space")
+    page = strata.wait(
+        lambda: strata.preview()
+        and strata.preview().find(role="image", name="PDF page text"),
+        "PDF page",
+    )
+    strata.settle(page)
+    saved = strata.environment.read_preferences()["text_size"]
+    captures = ArtifactCollector(test_name=request.node.name).directory
+    if request.config.getoption("--keep-artifacts"):
+        strata.screenshot(captures / "initial.png")
+
+    def zoom_at(point):
+        control = MODIFIER_KEYSYMS["ctrl"]
+        strata.keyboard.connection.key(control, True)
+        try:
+            strata.pointer.scroll(point, clicks=2, down=False)
+        finally:
+            strata.keyboard.connection.key(control, False)
+
+    if gesture == "reset":
+        strata.pointer.click(page)
+    zoom_at(page.screen_bounds().center)
+    strata.settle(page)
+    if request.config.getoption("--keep-artifacts"):
+        strata.screenshot(captures / "zoomed.png")
+    if gesture == "reset":
+        strata.keyboard.press("ctrl+0")
+    strata.settle(page)
+    assert strata.environment.read_preferences()["text_size"] == saved
+    if request.config.getoption("--keep-artifacts"):
+        strata.screenshot(captures / "after.png")
+
+    strata.pointer.click(page)
+    listing = strata.entry("page.pdf")
+    zoom_at(listing.screen_bounds().center)
+    strata.wait(
+        lambda: strata.environment.read_preferences()["text_size"] == "23",
+        "wheel outside the PDF to resize interface text despite PDF keyboard focus",
+    )
+    strata.pointer.click(strata.entry("page.pdf"))
+    strata.keyboard.press("ctrl+0")
+    strata.wait(
+        lambda: strata.environment.read_preferences()["text_size"] == "13",
+        "reset outside the PDF to restore interface text size",
+    )
+
+
 def table_clipboard_text(strata, *, before_read=None):
     from gi.repository import Gdk, GLib
 
