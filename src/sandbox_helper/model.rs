@@ -611,17 +611,12 @@ fn render_model(
 ) -> Result<RenderedModel, String> {
     progress(ModelPreviewStage::Reading);
     let parts: Vec<_> = value.split(':').collect();
-    let (format, size, accent, surface, view) = match parts.as_slice() {
-        [format, size, accent, surface] => {
-            (*format, *size, *accent, *surface, ModelView::default())
-        }
-        [format, size, accent, surface, view] => (
-            *format,
-            *size,
-            *accent,
-            *surface,
-            ModelView::from_argument(view).ok_or("Invalid model request")?,
-        ),
+    let [format, size, accent, surface, view @ ..] = parts.as_slice() else {
+        return Err("Invalid model request".into());
+    };
+    let view = match view {
+        [] => ModelView::default(),
+        [view] => ModelView::from_argument(view).ok_or("Invalid model request")?,
         _ => return Err("Invalid model request".into()),
     };
     let format = ModelFormat::from_argument(format).ok_or("Invalid model format")?;

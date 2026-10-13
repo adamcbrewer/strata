@@ -72,8 +72,8 @@ isolation, resource limits, or the other narrow optional runtime mounts.
 ## Local 3D model previews
 
 Quick Preview accepts STL, 3MF and FreeCAD (`.FCStd`) files. STL and single-part
-3MF geometry use a software render with four camera views looking down from the
-upper corners of the model's bounding box; FreeCAD uses its saved image. Rendered
+3MF geometry use a software render with four diagonal camera views looking down
+at the model; FreeCAD uses its saved image. Rendered
 meshes show media-style previous/next controls around a circular camera-position
 indicator, with stable centring and scale. Its dot sweeps around the circle to the
 selected corner, respecting the reduced-motion and system animation settings.

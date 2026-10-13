@@ -9,9 +9,10 @@ pub(super) fn read_mesh(render: ModelRender, path: &Path) -> Result<Option<Model
     let bytes = super::read_private_output(path, 256).map_err(|_| invalid())?;
     let mesh: Option<ModelMesh> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
     let Some(mesh) = mesh else {
-        return (render.format != ModelFormat::Stl)
-            .then_some(None)
-            .ok_or_else(invalid);
+        if render.format == ModelFormat::Stl {
+            return Err(invalid());
+        }
+        return Ok(None);
     };
     let format_matches = matches!(
         (render.format, mesh.encoding),
