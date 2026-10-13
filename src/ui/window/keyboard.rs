@@ -126,7 +126,7 @@ pub(super) fn install_on(
                 let (x, y, _) = surface.device_position(&device)?;
                 let native = gtk::Native::for_surface(&surface)?;
                 let (dx, dy) = native.surface_transform();
-                native.pick(x + dx, y + dy, gtk::PickFlags::DEFAULT)
+                native.pick(x - dx, y - dy, gtk::PickFlags::DEFAULT)
             });
         zoom.handle(&preferences, modifiers, controller.unit(), target, dy)
     });

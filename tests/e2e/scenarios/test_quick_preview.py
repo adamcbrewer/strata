@@ -652,8 +652,7 @@ def test_pdf_preview_selects_and_copies_text(strata, fixture_tree):
     pytest.param(False, marks=pytest.mark.preferences(tenxer_mode=False), id="default"),
     pytest.param(True, marks=pytest.mark.preferences(tenxer_mode=True), id="tenxer"),
 ])
-def test_pdf_zoom_keeps_interface_text_size(strata, fixture_tree, gesture, tenxer, request):
-    from harness.artifacts import ArtifactCollector
+def test_pdf_zoom_keeps_interface_text_size(strata, fixture_tree, gesture, tenxer):
     from harness.interaction import MODIFIER_KEYSYMS
 
     fixture_tree.path("page.pdf").write_bytes(
@@ -668,9 +667,6 @@ def test_pdf_zoom_keeps_interface_text_size(strata, fixture_tree, gesture, tenxe
     )
     strata.settle(page)
     saved = strata.environment.read_preferences()["text_size"]
-    captures = ArtifactCollector(test_name=request.node.name).directory
-    if request.config.getoption("--keep-artifacts"):
-        strata.screenshot(captures / "initial.png")
 
     def zoom_at(point):
         control = MODIFIER_KEYSYMS["ctrl"]
@@ -684,14 +680,10 @@ def test_pdf_zoom_keeps_interface_text_size(strata, fixture_tree, gesture, tenxe
         strata.pointer.click(page)
     zoom_at(page.screen_bounds().center)
     strata.settle(page)
-    if request.config.getoption("--keep-artifacts"):
-        strata.screenshot(captures / "zoomed.png")
     if gesture == "reset":
         strata.keyboard.press("ctrl+0")
     strata.settle(page)
     assert strata.environment.read_preferences()["text_size"] == saved
-    if request.config.getoption("--keep-artifacts"):
-        strata.screenshot(captures / "after.png")
 
     strata.pointer.click(page)
     listing = strata.entry("page.pdf")
