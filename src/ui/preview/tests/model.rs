@@ -171,6 +171,14 @@ fn camera_reload_failures_keep_the_last_view_and_allow_retry() {
             let drawer = PreviewDrawer::new(provider.clone(), false);
             drawer.show(entry("mesh.stl"), None);
             ready(&provider, 0, Some(ModelView::FrontLeft));
+            let image = drawer
+                .state
+                .model
+                .borrow()
+                .as_ref()
+                .expect("mesh controls")
+                .picture
+                .paintable();
             let next = drawer
                 .state
                 .model
@@ -205,6 +213,41 @@ fn camera_reload_failures_keep_the_last_view_and_allow_retry() {
                 provider.0.borrow()[2].request.model_view,
                 ModelView::FrontRight
             );
+            let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+            png.extend(16u32.to_be_bytes());
+            png.extend(16u32.to_be_bytes());
+            let pending = provider.0.borrow();
+            (pending[2].emit)(PreviewEvent::Ready(Preview {
+                request_id: pending[2].request.id,
+                entry: pending[2].request.entry.clone(),
+                content_type: "model/stl".into(),
+                content: PreviewContent::Model {
+                    png,
+                    mesh: Some(ModelMesh {
+                        view: ModelView::FrontRight,
+                        encoding: ModelEncoding::BinaryStl,
+                        triangles: 23,
+                    }),
+                },
+            }));
+            drop(pending);
+            {
+                let model = drawer.state.model.borrow();
+                let model = model.as_ref().expect("last decodable view");
+                assert_eq!(model.picture.paintable(), image);
+                assert_eq!(model.view(), ModelView::FrontLeft);
+                assert!(!model.loading_overlay.is_visible());
+            }
+            assert_eq!(drawer.state.model_view.get(), ModelView::FrontLeft);
+            assert!(next.is_sensitive());
+            next.emit_clicked();
+            assert_eq!(provider.0.borrow().len(), 4);
+            assert_eq!(
+                provider.0.borrow()[3].request.model_view,
+                ModelView::FrontRight
+            );
+            ready(&provider, 3, Some(ModelView::FrontRight));
+            assert_eq!(drawer.state.model_view.get(), ModelView::FrontRight);
             drawer.close();
         },
     );

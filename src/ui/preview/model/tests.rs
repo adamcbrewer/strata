@@ -29,19 +29,25 @@ fn camera_animation_stops_for_reduced_motion_and_when_the_preview_unmaps() {
             window.present();
             pump_until(|| camera.is_mapped());
 
+            let initial = motion.angle.get();
             motion.set_view(&camera, ModelView::FrontRight);
             assert!(motion.tick.borrow().is_some());
+            assert_eq!(motion.angle.get(), initial);
+            pump_until(|| motion.angle.get() != initial);
             pump_until(|| motion.tick.borrow().is_none());
+            assert_eq!(motion.angle.get(), motion.target.get());
 
             motion.set_view(&camera, ModelView::BackRight);
             assert!(motion.tick.borrow().is_some());
             settings.set_gtk_enable_animations(false);
             pump_until(|| motion.tick.borrow().is_none());
+            assert_eq!(motion.angle.get(), motion.target.get());
 
             settings.set_gtk_enable_animations(true);
             crate::ui::motion::set_reduce_motion(true);
             motion.set_view(&camera, ModelView::BackLeft);
             assert!(motion.tick.borrow().is_none());
+            assert_eq!(motion.angle.get(), motion.target.get());
 
             crate::ui::motion::set_reduce_motion(false);
             motion.set_view(&camera, ModelView::FrontLeft);
@@ -49,6 +55,7 @@ fn camera_animation_stops_for_reduced_motion_and_when_the_preview_unmaps() {
             window.close();
             pump_until(|| !camera.is_mapped());
             assert!(motion.tick.borrow().is_none());
+            assert_eq!(motion.angle.get(), motion.target.get());
         },
     );
 }

@@ -374,6 +374,11 @@ impl PreviewState {
         let texture = match gdk::Texture::from_bytes(&bytes) {
             Ok(texture) => texture,
             Err(error) => {
+                if let Some(model) = self.model.borrow().as_ref() {
+                    self.model_view.set(model.view());
+                    model.show_error(&error.to_string());
+                    return;
+                }
                 self.show_message(&crate::i18n::tr("Preview unavailable"), &error.to_string());
                 return;
             }
