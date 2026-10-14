@@ -1777,14 +1777,27 @@ fn copy_recursively_local(
                     children.sort();
                 }
                 if !options.overwrite_existing || !target.query_exists(Some(&cancellable)) {
-                    await_cancellable(&target, &cancellable, |target, cancellable, result| {
-                        target.make_directory_async(
-                            glib::Priority::DEFAULT,
-                            Some(cancellable),
-                            move |output| result.resolve(output),
-                        );
-                    })
-                    .await?;
+                    // GIO reports a cancelled mkdir as failed even after it created the
+                    // directory, which would hide it from cancellation cleanup.
+                    await_cancellable(
+                        &target,
+                        &gio::Cancellable::new(),
+                        |target, cancellable, result| {
+                            target.make_directory_async(
+                                glib::Priority::DEFAULT,
+                                Some(cancellable),
+                                move |output| result.resolve(output),
+                            );
+                        },
+                    )
+                    .await
+                    .map_err(|error| {
+                        if cancellable.is_cancelled() {
+                            cancelled_local_operation()
+                        } else {
+                            error
+                        }
+                    })?;
                     record_created_copy_root(&created_root, &target).await?;
                 }
                 let handle = Arc::new(handle);
