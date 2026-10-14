@@ -2307,19 +2307,19 @@ impl PreviewState {
             {
                 return glib::Propagation::Proceed;
             }
-            let Some(scroll) = weak_scroll.upgrade() else {
-                return glib::Propagation::Stop;
-            };
-            let previous = zoom_for_scroll.get();
-            let next = pdf_zoom_after_scroll(previous, dy);
-            if (next - previous).abs() < f64::EPSILON {
-                return glib::Propagation::Stop;
+            if let Some(scroll) = weak_scroll.upgrade() {
+                let next = pdf_zoom_after_scroll(zoom_for_scroll.get(), dy);
+                let previous = apply_pdf_zoom(
+                    &scroll,
+                    &zoom_for_scroll,
+                    &page_width_for_scroll,
+                    &visible_pages_for_scroll.borrow(),
+                    next,
+                );
+                if let Some(previous) = previous {
+                    preserve_pdf_view_center(&scroll, next / previous);
+                }
             }
-            zoom_for_scroll.set(next);
-            let width = pdf_page_width(&scroll, next);
-            page_width_for_scroll.set(width);
-            resize_pdf_pages(&visible_pages_for_scroll.borrow(), width);
-            preserve_pdf_view_center(&scroll, next / previous);
             glib::Propagation::Stop
         });
         scroll.add_controller(zoom_scroll);
@@ -2333,11 +2333,14 @@ impl PreviewState {
             let Some(scroll) = weak_scroll.upgrade() else {
                 return;
             };
-            zoom_for_reset.set(PDF_MIN_ZOOM);
-            let width = pdf_page_width(&scroll, PDF_MIN_ZOOM);
-            page_width_for_reset.set(width);
-            resize_pdf_pages(&visible_pages_for_reset.borrow(), width);
-            set_adjustment_value(&scroll.hadjustment(), 0.0);
+            // No view-center correction: the list view re-anchors the visible page itself.
+            apply_pdf_zoom(
+                &scroll,
+                &zoom_for_reset,
+                &page_width_for_reset,
+                &visible_pages_for_reset.borrow(),
+                PDF_MIN_ZOOM,
+            );
         });
         let actions = gio::SimpleActionGroup::new();
         actions.add_action(&reset);
@@ -3804,6 +3807,23 @@ fn pdf_page_width(scroll: &gtk::ScrolledWindow, zoom: f64) -> i32 {
         .saturating_sub(PDF_PAGE_GAP * 2)
         .max(1);
     (f64::from(fit_width) * zoom).round() as i32
+}
+
+fn apply_pdf_zoom(
+    scroll: &gtk::ScrolledWindow,
+    zoom: &Cell<f64>,
+    page_width: &Cell<i32>,
+    pages: &HashMap<i32, (gtk::Overlay, gtk::Picture, gtk::DrawingArea)>,
+    next: f64,
+) -> Option<f64> {
+    let previous = zoom.replace(next);
+    if (next - previous).abs() < f64::EPSILON {
+        return None;
+    }
+    let width = pdf_page_width(scroll, next);
+    page_width.set(width);
+    resize_pdf_pages(pages, width);
+    Some(previous)
 }
 
 fn resize_pdf_pages(

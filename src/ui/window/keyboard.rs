@@ -116,7 +116,7 @@ pub(super) fn install_on(
             return Propagation::Proceed;
         }
         let modifiers = controller.current_event_state();
-        // Scroll events carry no position. X11 requires querying the seat pointer.
+        // Scroll events carry no position, so ask the seat where the pointer is.
         let target = controller
             .current_event()
             .filter(|_| modifiers.contains(Modifiers::CONTROL_MASK))
@@ -675,14 +675,13 @@ impl Dispatcher {
             self.open_with.invalidate();
         }
         let preferences = &self.type_to_search.preferences;
-        if self.preview.handle_pdf_key(press) {
-            return Propagation::Stop;
-        }
         if let Some(size) = preferences.text_size().for_shortcut(press) {
             // Text-size shortcuts run before the chord consumer. Drop the mark
             // first, then resize, matching Ctrl+, opening Settings.
             self.shortcuts.cancel_chord();
-            preferences.set_text_size(size);
+            if !self.preview.reset_pdf_zoom(press) {
+                preferences.set_text_size(size);
+            }
             return Propagation::Stop;
         }
         if let Some(result) = self.input_owner(browser, press) {

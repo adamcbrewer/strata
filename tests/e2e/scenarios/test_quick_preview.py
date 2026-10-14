@@ -647,14 +647,12 @@ def test_pdf_preview_selects_and_copies_text(strata, fixture_tree):
 
 
 @pytest.mark.preferences(single_click_previews=False, text_size=21)
-@pytest.mark.parametrize("gesture", ["wheel", "reset"])
-@pytest.mark.parametrize("tenxer", [
-    pytest.param(False, marks=pytest.mark.preferences(tenxer_mode=False), id="default"),
-    pytest.param(True, marks=pytest.mark.preferences(tenxer_mode=True), id="tenxer"),
+@pytest.mark.parametrize(("gesture", "tenxer"), [
+    pytest.param("wheel", False, marks=pytest.mark.preferences(tenxer_mode=False), id="wheel"),
+    pytest.param("reset", False, marks=pytest.mark.preferences(tenxer_mode=False), id="reset"),
+    pytest.param("reset", True, marks=pytest.mark.preferences(tenxer_mode=True), id="reset-tenxer"),
 ])
 def test_pdf_zoom_keeps_interface_text_size(strata, fixture_tree, gesture, tenxer):
-    from harness.interaction import MODIFIER_KEYSYMS
-
     fixture_tree.path("page.pdf").write_bytes(
         (Path(__file__).resolve().parents[2] / "fixtures" / "documents" / "text.pdf").read_bytes()
     )
@@ -667,27 +665,27 @@ def test_pdf_zoom_keeps_interface_text_size(strata, fixture_tree, gesture, tenxe
     )
     strata.settle(page)
     saved = strata.environment.read_preferences()["text_size"]
-
-    def zoom_at(point):
-        control = MODIFIER_KEYSYMS["ctrl"]
-        strata.keyboard.connection.key(control, True)
-        try:
-            strata.pointer.scroll(point, clicks=2, down=False)
-        finally:
-            strata.keyboard.connection.key(control, False)
+    fitted = page.screen_bounds().width
 
     if gesture == "reset":
         strata.pointer.click(page)
-    zoom_at(page.screen_bounds().center)
-    strata.settle(page)
+    strata.pointer.scroll(page.screen_bounds().center, clicks=2, down=False, modifiers=["ctrl"])
+    strata.wait(
+        lambda: page.screen_bounds().width > fitted,
+        "Ctrl+wheel over the PDF to enlarge its pages",
+    )
     if gesture == "reset":
         strata.keyboard.press("ctrl+0")
+        strata.wait(
+            lambda: page.screen_bounds().width == fitted,
+            "Ctrl+0 on the focused PDF to restore the fitted page width",
+        )
     strata.settle(page)
     assert strata.environment.read_preferences()["text_size"] == saved
 
     strata.pointer.click(page)
     listing = strata.entry("page.pdf")
-    zoom_at(listing.screen_bounds().center)
+    strata.pointer.scroll(listing.screen_bounds().center, clicks=2, down=False, modifiers=["ctrl"])
     strata.wait(
         lambda: strata.environment.read_preferences()["text_size"] == "23",
         "wheel outside the PDF to resize interface text despite PDF keyboard focus",

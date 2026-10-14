@@ -156,7 +156,7 @@ pub(super) fn step_preview_volume(delta: f64) {
 }
 
 impl PreviewDrawer {
-    pub(in crate::ui) fn handle_pdf_key(&self, press: &KeyPress) -> bool {
+    pub(in crate::ui) fn reset_pdf_zoom(&self, press: &KeyPress) -> bool {
         press.is(PDF_ZOOM_RESET)
             && self
                 .state

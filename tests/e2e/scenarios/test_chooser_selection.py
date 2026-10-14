@@ -88,9 +88,18 @@ def test_pdf_zoom_reset_in_chooser_keeps_interface_text_size(
                 lambda: test_environment.read_preferences().get("tenxer_mode") == "true",
                 message="10xer enabled in chooser",
             )
-        saved = test_environment.read_preferences()["text_size"]
+        fitted = page.screen_bounds().width
+        pointer.scroll(page.screen_bounds().center, clicks=2, down=False, modifiers=["ctrl"])
+        tree.wait_until(
+            lambda: page.screen_bounds().width > fitted,
+            message="Ctrl+wheel over the chooser PDF to enlarge its page",
+        )
         keyboard.press("ctrl+0")
-        assert test_environment.read_preferences()["text_size"] == saved
+        tree.wait_until(
+            lambda: page.screen_bounds().width == fitted,
+            message="Ctrl+0 on the focused chooser PDF to restore the fitted page width",
+        )
+        assert test_environment.read_preferences()["text_size"] == "14"
         assert not response.done()
         keyboard.press("Escape")
         tree.wait_until(
