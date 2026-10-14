@@ -98,22 +98,23 @@ pub(crate) fn entry_supports_quick_preview(entry: &FileEntry) -> bool {
         return entry.location.native_path().is_some();
     }
 
+    let native_path = entry.location.native_path();
     let (content_type, uncertain) =
         gio::content_type_guess(Some(Path::new(&entry.native_name)), None::<&[u8]>);
     let content = crate::services::content_family(&content_type);
     if crate::services::table::is_workbook(&content_type, &entry.native_name)
         || crate::services::docx::is_document(&content_type, &entry.native_name)
     {
-        return entry.location.native_path().is_some();
+        return native_path.is_some();
     }
-    if entry.location.native_path().is_none()
+    if native_path.is_none()
         && (matches!(content, PreviewContent::Pdf { .. })
             || (matches!(content, PreviewContent::Media)
                 && !crate::services::supports_remote_video(&entry.native_name)))
     {
         return false;
     }
-    if entry.location.native_path().is_some()
+    if native_path.is_some()
         && crate::services::archive_preview_format(&entry.native_name).is_some()
     {
         return true;
@@ -3324,7 +3325,8 @@ fn media_family(content_type: &str) -> Option<MediaFamily> {
     }
 }
 
-/// Cached per extension: stepping scans whole folders on the main thread.
+/// Cached per extension: stepping scans whole folders on the main thread. An entry whose
+/// metadata probe found no media drops out of the sequence whatever its name says.
 fn entry_family(entry: &FileEntry) -> Option<MediaFamily> {
     thread_local! {
         static FAMILIES: RefCell<HashMap<String, Option<MediaFamily>>> =
@@ -3335,6 +3337,9 @@ fn entry_family(entry: &FileEntry) -> Option<MediaFamily> {
         .and_then(|extension| extension.to_str())
         .filter(|_| !entry.is_directory())
         .map(str::to_ascii_lowercase)?;
+    if entry.duration_seconds == MetadataValue::Unavailable {
+        return None;
+    }
     FAMILIES.with_borrow_mut(|known| {
         *known.entry(extension).or_insert_with_key(|extension| {
             media_family(
