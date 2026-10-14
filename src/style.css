@@ -3114,10 +3114,6 @@ paned > separator {
   font-variant-numeric: tabular-nums;
 }
 
-.preview-model-controls {
-  padding: 8px 16px 16px;
-}
-
 .preview-media-center.preview-model-camera {
   background: transparent;
   border: none;

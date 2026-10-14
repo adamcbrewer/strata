@@ -54,10 +54,14 @@ def test_model_preview_renders_stl_prefers_thumbnails_and_reports_limits(strata)
             '</resources><build><item objectid="1"/></build></model>',
         )
 
-    strata.wait(lambda: strata.entry("sample.stl"), "STL file in listing")
+    strata.wait(
+        lambda: all(strata.entry(name) for name in ["binary.stl", "geometry.3mf", "sample.3mf", "sample.stl"]),
+        "model files in listing",
+    )
     strata.select_entry("sample.stl")
     strata.keyboard.press("space")
     strata.wait(lambda: strata.preview() and strata.preview().find(role="image", name="Model preview"), "rendered STL preview")
+    assert strata.preview_shows("4 of 4 in folder")
     for name in ["Front right", "Back right", "Back left", "Front left"]:
         next_view = strata.preview().find(role="button", name="Next model view")
         assert next_view is not None
@@ -71,12 +75,14 @@ def test_model_preview_renders_stl_prefers_thumbnails_and_reports_limits(strata)
         assert camera is not None and camera.description == name
         assert strata.preview_shows("ASCII STL")
         assert strata.preview_shows("1 triangle")
+        assert strata.preview_shows("4 of 4 in folder")
     strata.pointer.click(strata.preview().find(role="button", name="Close preview (Space)"))
     strata.wait(lambda: strata.preview() is None, "STL preview to close")
 
     strata.select_entry("binary.stl")
     strata.keyboard.press("space")
     strata.wait(lambda: strata.preview_shows("Binary STL") and strata.preview_shows("1 triangle"), "binary STL mesh details")
+    assert strata.preview_shows("1 of 4 in folder")
     strata.pointer.click(strata.preview().find(role="button", name="Close preview (Space)"))
     strata.wait(lambda: strata.preview() is None, "binary STL preview to close")
 
@@ -101,6 +107,7 @@ def test_model_preview_renders_stl_prefers_thumbnails_and_reports_limits(strata)
     )
     assert strata.preview_shows("3MF")
     assert strata.preview_shows("1 triangle")
+    assert strata.preview_shows("2 of 4 in folder")
     strata.pointer.click(strata.preview().find(role="button", name="Close preview (Space)"))
     strata.wait(lambda: strata.preview() is None, "geometry preview to close")
     with zipfile.ZipFile(folder / "assembly.3mf", "w") as package:

@@ -85,6 +85,10 @@ back-right upper right and back-left upper left. These names follow the model's
 coordinate axes.
 View names are exposed to assistive technology; the visible controls use the
 orbit diagram without a text caption.
+The model and controls form one vertically centred block using the video player's
+layout. Geometry renders on a square canvas, avoiding unused space from the pane's
+aspect ratio. Above the badges, the filename and its position among model files
+in the current sorted or filtered listing use the same styling as video previews.
 Above the camera controls, media-style badges show the mesh encoding (binary STL,
 ASCII STL or 3MF) and the rendered triangle count. These details come from the
 existing parse/render pass and remain part of the cached preview. Thumbnail-only

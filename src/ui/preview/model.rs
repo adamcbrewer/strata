@@ -9,7 +9,7 @@ use gtk::{gdk, glib, prelude::*};
 
 use crate::services::{ModelEncoding, ModelMesh, ModelPreviewStage, ModelView};
 
-use super::{PreviewState, media_layout};
+use super::{ListingPosition, PreviewState, media_layout, video::PlayerLayout};
 
 pub(super) struct ModelPreview {
     pub(super) picture: gtk::Picture,
@@ -20,6 +20,9 @@ pub(super) struct ModelPreview {
     pub(super) progress: gtk::Label,
     frame: gtk::Overlay,
     root: gtk::Box,
+    layout: PlayerLayout,
+    eyebrow: gtk::Label,
+    title: gtk::Label,
     badges: gtk::Box,
     camera_motion: Rc<CameraMotion>,
     spinner: gtk::Spinner,
@@ -230,8 +233,26 @@ impl ModelPreview {
         loading_overlay.append(&spinner);
         loading_overlay.append(&progress);
         frame.add_overlay(&loading_overlay);
-        let root = media_layout::section(&frame, texture);
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.add_css_class("preview-model");
+        root.set_hexpand(true);
+        root.set_vexpand(true);
+        let layout = PlayerLayout::new();
+        layout.set_paintable(Some(texture.upcast_ref()));
+        root.set_layout_manager(Some(layout.clone()));
+        root.append(&frame);
+        let eyebrow = gtk::Label::new(None);
+        eyebrow.add_css_class("preview-video-eyebrow");
+        let title = gtk::Label::new(None);
+        title.add_css_class("preview-video-title");
+        for label in [&eyebrow, &title] {
+            label.set_xalign(0.0);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        }
+        let header = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        header.append(&eyebrow);
+        header.append(&title);
+        root.append(&header);
         let previous = camera_button(crate::assets::icons::SKIP_BACK, "Previous model view");
         let next = camera_button(crate::assets::icons::SKIP_FORWARD, "Next model view");
         for (button, step) in [(&previous, -1), (&next, 1)] {
@@ -253,9 +274,9 @@ impl ModelPreview {
         let badges = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         badges.add_css_class("preview-video-badges");
         badges.set_halign(gtk::Align::Start);
+        root.append(&badges);
         let controls = gtk::Box::new(gtk::Orientation::Vertical, 12);
         controls.add_css_class("preview-model-controls");
-        controls.append(&badges);
         controls.append(&row);
         controls.append(&error);
         root.append(&controls);
@@ -268,6 +289,9 @@ impl ModelPreview {
             progress,
             frame,
             root,
+            layout,
+            eyebrow,
+            title,
             badges,
             camera_motion,
             spinner,
@@ -282,6 +306,13 @@ impl ModelPreview {
 
     pub(super) fn view(&self) -> ModelView {
         self.view.get()
+    }
+
+    fn set_header(&self, filename: &str, position: Option<ListingPosition>) {
+        self.title.set_text(filename);
+        self.eyebrow
+            .set_text(&position.map(ListingPosition::caption).unwrap_or_default());
+        self.eyebrow.set_visible(position.is_some());
     }
 
     fn set_badges(&self, mesh: ModelMesh) {
@@ -343,13 +374,7 @@ impl ModelPreview {
     fn update(&self, texture: &gdk::Texture, mesh: ModelMesh) {
         let view = mesh.view;
         self.picture.set_paintable(Some(texture));
-        if let Some(layout) = self
-            .root
-            .layout_manager()
-            .and_then(|layout| layout.downcast::<media_layout::MediaLayout>().ok())
-        {
-            layout.set_paintable(Some(texture.upcast_ref()));
-        }
+        self.layout.set_paintable(Some(texture.upcast_ref()));
         self.view.set(view);
         self.set_camera_position(view);
         self.set_badges(mesh);
@@ -391,8 +416,16 @@ impl PreviewState {
             return;
         };
         self.model_view.set(mesh.view);
+        let filename = self
+            .current
+            .borrow()
+            .as_ref()
+            .map(|entry| entry.display_name.clone())
+            .unwrap_or_default();
+        let position = self.model_listing_position();
         if let Some(model) = self.model.borrow().as_ref() {
             model.update(&texture, mesh);
+            model.set_header(&filename, position);
             return;
         }
         let weak = Rc::downgrade(self);
@@ -405,9 +438,29 @@ impl PreviewState {
                 }
             }),
         );
+        model.set_header(&filename, position);
         super::install_preview_drag(&model.picture, self);
         self.content.append(&model.root);
         self.model.replace(Some(model));
+    }
+
+    fn model_listing_position(&self) -> Option<ListingPosition> {
+        let view = self
+            .keyboard_view
+            .borrow()
+            .as_ref()
+            .and_then(crate::ui::browser::WeakBrowserView::upgrade)?;
+        let depth = self.current_depth.get()?;
+        let current = self.current.borrow().as_ref()?.location.clone();
+        let files = view.displayed_entries_matching(depth, |entry| {
+            entry.is_file() && crate::services::is_model(&entry.native_name)
+        });
+        let index = files.iter().position(|entry| entry.location == current)?;
+        Some(ListingPosition {
+            position: index + 1,
+            count: files.len(),
+            results: view.results_replace_listing(),
+        })
     }
 
     fn change_model_view(self: &Rc<Self>, step: i32) {

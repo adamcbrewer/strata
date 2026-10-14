@@ -360,6 +360,9 @@ fn shade(
     view: ModelView,
     progress: &dyn Fn(ModelPreviewStage),
 ) -> Result<Vec<u8>, String> {
+    // Keep empty canvas from separating the model and its centred player controls.
+    let side = width.min(height);
+    let (width, height) = (side, side);
     progress(ModelPreviewStage::Rendering {
         triangles: faces.len(),
     });
