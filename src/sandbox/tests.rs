@@ -329,6 +329,34 @@ fn metadata_probe_retains_software_sandbox_limits_and_narrow_runtime_access() {
 }
 
 #[test]
+fn image_sandboxes_resolve_debian_imagemagick_alternatives() {
+    let command = sandbox_command(
+        Path::new("/usr/bin/bwrap"),
+        Path::new("/tmp/strata"),
+        Path::new("/home/alice/Pictures/untrusted.heic"),
+        Path::new("/tmp/private-output"),
+        ParseOperation::PreviewImage,
+        0,
+        MediaPreviewBackend::Software,
+        &[],
+    );
+    let arguments: Vec<_> = command
+        .get_args()
+        .map(|arg| arg.to_string_lossy())
+        .collect();
+    let joined = arguments.join(" ");
+    for tool in ["magick", "convert"] {
+        let path = format!("/etc/alternatives/{tool}");
+        assert!(joined.contains(&format!("--ro-bind-try {path} {path}")));
+    }
+    assert!(
+        !arguments
+            .iter()
+            .any(|argument| argument == "/etc/alternatives")
+    );
+}
+
+#[test]
 fn media_previews_use_bounded_streaming_instead_of_driver_wide_resource_limits() {
     let operation = MEDIA_PREVIEW.clone();
     let command = sandbox_command(

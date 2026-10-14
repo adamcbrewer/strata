@@ -762,6 +762,11 @@ fn runtime_command(bwrap: &Path, needs_media_libraries: bool) -> Command {
             }
         }
     }
+    // Debian-family ImageMagick commands resolve through these links.
+    for tool in ["magick", "convert"] {
+        let path = format!("/etc/alternatives/{tool}");
+        command.arg("--ro-bind-try").arg(&path).arg(&path);
+    }
     command
 }
 

@@ -225,6 +225,8 @@ previews; opening Settings is not required to initialize it. **Appearance** also
 has decrease/increase controls and a size button that resets to the default.
 Use **Ctrl++** (or **Ctrl+=**), **Ctrl+−**, and **Ctrl+0** to increase, decrease,
 and reset, including while an inline editor or Settings is open.
+Over a PDF preview, **Ctrl+wheel** zooms the pages instead. With the PDF page
+focused, **Ctrl+0** resets page zoom without changing the saved text size.
 
 The size is saved numerically, for example `text_size = 27`. Existing `"small"`,
 `"medium"`, and `"large"` settings still load as 11, 13, and 15 px. Out-of-range

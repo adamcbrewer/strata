@@ -2123,10 +2123,15 @@ scrollbar.horizontal > range > trough > slider {
 }
 
 .mode-scroll scrollbar.horizontal > range > trough {
-  margin-top: 3px;
-  margin-bottom: 3px;
   background-color: @strata_bg;
   background-image: linear-gradient(alpha(@strata_border, 0.25), alpha(@strata_border, 0.25));
+}
+
+/* The preview's sideways track shares this geometry so the bars line up across panes. */
+.mode-scroll scrollbar.horizontal > range > trough,
+.preview-content scrollbar.horizontal > range > trough {
+  margin-top: 3px;
+  margin-bottom: 3px;
   box-shadow: inset 0 0 0 1px alpha(@strata_border, 0.45);
 }
 
