@@ -913,6 +913,7 @@ fn preview_families_follow_file_bytes_not_names() {
             pdf_page: 0,
             media_size: MediaPreviewSize::new(640, 800),
             model_palette: crate::services::ModelPalette::default(),
+            model_view: Default::default(),
             archive_password: None,
         };
         let events = Rc::new(RefCell::new(Vec::new()));
@@ -934,6 +935,7 @@ fn preview_families_follow_file_bytes_not_names() {
                     page: 0,
                     pages: 0,
                     text_layer: None,
+                    model_mesh: None,
                 })
             },
         );

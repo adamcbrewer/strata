@@ -456,6 +456,9 @@ pub struct ModeViews {
     suppress_focus_scroll: Cell<bool>,
     /// Set while a footer prompt moves the cursor; the prompt keeps the keys.
     cursor_keeps_focus: Cell<bool>,
+    /// A pane whose results, rather than its hidden listing, take the focus a
+    /// `FocusChanged` asked for. The view state focuses them on their cursor.
+    results_take_focus: Cell<Option<usize>>,
 }
 
 impl ModeViews {
@@ -532,6 +535,7 @@ impl ModeViews {
             focus_before_header: RefCell::new(None),
             suppress_focus_scroll: Cell::new(false),
             cursor_keeps_focus: Cell::new(false),
+            results_take_focus: Cell::new(None),
         }
     }
 
@@ -1106,10 +1110,18 @@ impl ModeViews {
         gtk::ToggleButton,
         super::inline_search::InlineSearch,
     )> {
-        let pane = self
-            .panes_at(self.browser.active_depth()?)
-            .into_iter()
-            .next()?;
+        self.filter_at(self.browser.active_depth()?)
+    }
+
+    pub(in crate::ui) fn filter_at(
+        &self,
+        depth: usize,
+    ) -> Option<(
+        gtk::Entry,
+        gtk::ToggleButton,
+        super::inline_search::InlineSearch,
+    )> {
+        let pane = self.panes_at(depth).into_iter().next()?;
         Some((
             pane.filter_entry.clone()?,
             pane.filter_button.clone()?,
@@ -1639,6 +1651,10 @@ impl ModeViews {
                 None
             }
         })
+    }
+
+    pub(in crate::ui) fn take_results_focus(&self) -> Option<usize> {
+        self.results_take_focus.take()
     }
 
     pub fn focus_visible_pane(&self, depth: usize) {
@@ -2532,7 +2548,7 @@ fn build_icons_pane(
     let sections_for_settle = context.sections.clone();
     let marks_for_settle = context.marks.clone();
     let depth_for_settle = context.depth;
-    install_scroll_refresh(&scroll, context.scrolling.clone(), None, move || {
+    install_scroll_refresh(&scroll, context.scrolling.clone(), move || {
         let Some(browser) = browser_for_settle.upgrade() else {
             return;
         };
@@ -2733,7 +2749,6 @@ fn build_icons_view(context: &Rc<IconsContext>, model: &impl IsA<gio::ListModel>
     let thumbnail_size_for_bind = context.thumbnail_size.clone();
     let scrolling_for_bind = context.scrolling.clone();
     let state_for_bind = context.state.clone();
-    let bound_for_bind = bound_items.clone();
     let filter_query_for_bind = context.filter_query.clone();
     factory.connect_bind(move |_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
@@ -2753,7 +2768,7 @@ fn build_icons_view(context: &Rc<IconsContext>, model: &impl IsA<gio::ListModel>
         let thumbnail_size = icons_card_icon_slot(thumbnail_size_for_bind.get());
         super::icons_cell::set_slot(&card, thumbnail_size);
         if let Some(entry) = entry {
-            let edit = bound_edit(&bound_for_bind, item);
+            let edit = bound_edit(item);
             if let Some(edit) = &edit {
                 edit.bind(&entry.location);
             }
@@ -2941,52 +2956,79 @@ fn refresh_marquee_targets(pane: &Pane) {
 fn install_scroll_refresh(
     scroll: &gtk::ScrolledWindow,
     scrolling: Rc<Cell<bool>>,
-    css_class: Option<&'static str>,
     on_refresh: impl Fn() + 'static,
 ) {
-    let pending = Rc::new(RefCell::new(None::<super::frame::FrameTask>));
-    let on_refresh = Rc::new(on_refresh);
+    let settle = Rc::new(ScrollSettle {
+        scroll: scroll.downgrade(),
+        scrolling,
+        last_scroll: Cell::new(std::time::Instant::now()),
+        started: Cell::new(0),
+        armed: Cell::new(false),
+        on_refresh: Box::new(on_refresh),
+    });
     for adjustment in [scroll.vadjustment(), scroll.hadjustment()] {
-        let pending = pending.clone();
-        let scrolling = scrolling.clone();
-        let scroll = scroll.downgrade();
-        let on_refresh = on_refresh.clone();
+        let settle = settle.clone();
         adjustment.connect_value_changed(move |_| {
-            let Some(scroll) = scroll.upgrade() else {
+            settle.scrolling.set(true);
+            settle.last_scroll.set(std::time::Instant::now());
+            if !settle.armed.replace(true) {
+                settle.started.set(glib::monotonic_time());
+                ScrollSettle::arm(&settle, settle.delay());
+            }
+        });
+    }
+}
+
+struct ScrollSettle {
+    scroll: glib::WeakRef<gtk::ScrolledWindow>,
+    scrolling: Rc<Cell<bool>>,
+    last_scroll: Cell<std::time::Instant>,
+    started: Cell<i64>,
+    armed: Cell<bool>,
+    on_refresh: Box<dyn Fn()>,
+}
+
+impl ScrollSettle {
+    const DELAY: std::time::Duration = std::time::Duration::from_millis(25);
+    const MINIMUM_FRAMES: f64 = 2.0;
+
+    fn delay(&self) -> std::time::Duration {
+        let frames = self
+            .scroll
+            .upgrade()
+            .and_then(|scroll| scroll.frame_clock())
+            // fps() averages the whole frame history, so an idle gap before this scroll would
+            // stretch the delay.
+            .filter(|clock| {
+                clock
+                    .timings(clock.history_start())
+                    .is_some_and(|timings| timings.frame_time() >= self.started.get())
+            })
+            .map(|clock| clock.fps())
+            .filter(|fps| *fps > 0.0)
+            .map_or(std::time::Duration::ZERO, |fps| {
+                std::time::Duration::from_secs_f64(Self::MINIMUM_FRAMES / fps)
+            });
+        Self::DELAY.max(frames)
+    }
+
+    fn arm(settle: &Rc<Self>, delay: std::time::Duration) {
+        let settle = Rc::downgrade(settle);
+        glib::timeout_add_local_once(delay, move || {
+            let Some(settle) = settle.upgrade() else {
                 return;
             };
-            if pending.borrow().is_some() {
+            let still = settle.last_scroll.get().elapsed();
+            let delay = settle.delay();
+            if still < delay {
+                Self::arm(&settle, delay - still);
                 return;
             }
-            scrolling.set(true);
-            if let Some(css_class) = css_class {
-                let scrolling = scrolling.clone();
-                let scroll = scroll.downgrade();
-                glib::idle_add_local_once(move || {
-                    if scrolling.get()
-                        && let Some(scroll) = scroll.upgrade()
-                    {
-                        scroll.add_css_class(css_class);
-                    }
-                });
+            settle.armed.set(false);
+            settle.scrolling.set(false);
+            if settle.scroll.upgrade().is_some() {
+                (settle.on_refresh)();
             }
-            let pending_for_frame = pending.clone();
-            let scrolling = scrolling.clone();
-            let weak_scroll = scroll.downgrade();
-            let on_refresh = on_refresh.clone();
-            pending.replace(Some(super::frame::FrameTask::new(
-                Some(scroll.upcast_ref()),
-                move || {
-                    pending_for_frame.borrow_mut().take();
-                    scrolling.set(false);
-                    if let Some(scroll) = weak_scroll.upgrade() {
-                        if let Some(css_class) = css_class {
-                            scroll.remove_css_class(css_class);
-                        }
-                        on_refresh();
-                    }
-                },
-            )));
         });
     }
 }
@@ -3538,7 +3580,7 @@ fn build_list_pane(
     let source_index_for_settle = source_index.clone();
     let sections_for_settle = Rc::downgrade(&sections);
     let marks_for_settle = clipboard_marks.clone();
-    install_scroll_refresh(&scroll, scrolling, Some("list-fast-scroll"), move || {
+    install_scroll_refresh(&scroll, scrolling, move || {
         let Some(browser) = browser_for_settle.upgrade() else {
             return;
         };
@@ -3811,25 +3853,17 @@ fn pane_base(
     )
 }
 
-fn bound_edit(
-    items: &RefCell<Vec<BoundModeItem>>,
-    item: &gtk::ListItem,
-) -> Option<super::collection_edit::EditWidgets> {
-    items
-        .borrow()
-        .iter()
-        .find(|bound| bound.item.upgrade().as_ref() == Some(item))
-        .map(|bound| bound.edit.clone())
+fn bound_edit(item: &gtk::ListItem) -> Option<super::collection_edit::EditWidgets> {
+    super::collection_edit::item_edit(item)
 }
 
 fn install_edit_unbind(
     factory: &gtk::SignalListItemFactory,
     items: &Rc<RefCell<Vec<BoundModeItem>>>,
 ) {
-    let unbind = items.clone();
     factory.connect_unbind(move |_, object| {
         if let Some(item) = object.downcast_ref::<gtk::ListItem>()
-            && let Some(edit) = bound_edit(&unbind, item)
+            && let Some(edit) = bound_edit(item)
         {
             edit.unbind();
         }
@@ -3837,6 +3871,7 @@ fn install_edit_unbind(
     });
     let teardown = items.clone();
     factory.connect_teardown(move |_, object| {
+        super::collection_edit::forget_item_edit(object);
         teardown.borrow_mut().retain(|bound| {
             bound
                 .item
@@ -3859,6 +3894,7 @@ fn register_bound_mode_item(
     weak_widget.set(Some(widget.upcast_ref()));
     let weak_rename_label = glib::WeakRef::new();
     weak_rename_label.set(Some(rename_label.upcast_ref()));
+    super::collection_edit::register_item_edit(item, &edit);
     items.borrow_mut().push(BoundModeItem {
         item: weak_item,
         widget: weak_widget,
