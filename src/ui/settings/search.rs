@@ -254,6 +254,12 @@ const TARGETS: &[Target] = &[
         aliases: "appearance colors custom themes add edit light dark",
     },
     Target {
+        id: "interface-font",
+        page: "theme",
+        title: "Interface font",
+        aliases: "appearance font typeface family typography",
+    },
+    Target {
         id: "text",
         page: "theme",
         title: "Text size",
@@ -270,6 +276,12 @@ const TARGETS: &[Target] = &[
         page: "theme",
         title: "Corner roundness",
         aliases: "appearance corners radius rounded square shape borders",
+    },
+    Target {
+        id: "show-thumbnails",
+        page: "theme",
+        title: "Show thumbnails",
+        aliases: "appearance images pictures photos videos documents thumbnails icons previews disable",
     },
     Target {
         id: "file-icon-colors",

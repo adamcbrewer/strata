@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{MountTable, is_remote_fs_type, unescape};
+use super::{MountKey, MountTable, is_remote_fs_type, unescape};
 
 mod byte_paths;
 
@@ -28,6 +28,33 @@ fn parses_mount_points_and_filesystem_types() {
             "/run/user/1000/gvfs/smb-share:server=host,share=s/file"
         )),
         Some("fuse.gvfsd-fuse")
+    );
+}
+
+#[test]
+fn mount_keys_identify_one_mount_instance() {
+    let table = MountTable::parse(SAMPLE);
+    let share = table
+        .mount_for(Path::new("/mnt/my share/file"))
+        .expect("share mount");
+    assert_eq!(
+        share,
+        MountKey {
+            mount_id: 60,
+            device: (0, 50),
+            mount_point: "/mnt/my share".into(),
+            fs_type: "cifs".to_owned(),
+        }
+    );
+    let remounted = MountTable::parse(SAMPLE.replace("60 22 0:50", "61 22 0:50"));
+    assert_ne!(
+        remounted.mount_for(Path::new("/mnt/my share/file")),
+        Some(share)
+    );
+    assert!(
+        MountTable::parse("x 0 0:1 / / rw - ext4 /dev/x rw\n")
+            .mount_for(Path::new("/"))
+            .is_none()
     );
 }
 

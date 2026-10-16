@@ -75,9 +75,9 @@ pub(super) use crate::ui::browser::clipboard::{
     ClipboardMark, ClipboardMarks, file_drag_content, mark_in, set_mark_result_style,
 };
 pub(crate) use crate::ui::browser::clipboard::{
-    PreparedFileDrop, arm_spring_load_navigation, clear_active_drag, drag_actions_for_modifiers,
-    file_drag_hover_target, file_drop_action, file_drop_commit, locations_from_file_list_value,
-    prepare_file_drop_target,
+    PreparedFileDrop, active_drag_snapshot, arm_spring_load_navigation, clear_active_drag,
+    drag_actions_for_modifiers, file_drag_hover_target, file_drop_action, file_drop_commit,
+    locations_from_file_list_value, prepare_file_drop_target,
 };
 pub(crate) use crate::ui::browser::collection::{
     ActivePaneFilter, bind_listing_filter, detach_collection_view, filter_placeholder,
@@ -1196,6 +1196,14 @@ impl BrowserView {
             .set_group_by_type(enabled);
     }
 
+    pub fn set_list_columns(&self) {
+        self.state.mode_views.borrow().set_list_columns();
+    }
+
+    pub fn open_list_columns_popover(&self) {
+        self.state.mode_views.borrow().open_list_columns_popover();
+    }
+
     pub fn apply_resolved_icons_size(&self, size: i32) {
         self.state
             .mode_views
@@ -1936,7 +1944,9 @@ impl BrowserView {
         launch_terminal(&location, &self.state.overlay);
     }
 
+    /// A user Reload also retries Trash on mounts that refused it earlier.
     pub fn refresh(&self) {
+        crate::adapters::trash_support::forget_all();
         self.state.refresh_browser();
     }
 

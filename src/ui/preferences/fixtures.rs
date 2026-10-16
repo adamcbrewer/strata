@@ -68,6 +68,7 @@ pub(in crate::ui) fn non_default_preferences() -> Preferences {
         show_hidden: true,
         text_size: TextSize::new(24),
         corner_roundness: CornerRoundness::new(40),
+        interface_font: Some("Fixture Sans".into()),
         interface_renderer: InterfaceRenderer::Cairo,
         language: crate::i18n::Language::English,
         folders_first: false,
@@ -80,6 +81,7 @@ pub(in crate::ui) fn non_default_preferences() -> Preferences {
         preview_autoplay: true,
         auto_refresh_interval: 600,
         thumbnail_workers: 6,
+        show_thumbnails: false,
         icons_thumbnail_size: 128,
         chooser_column_width: Some(420),
         browser_column_width: Some(380),
@@ -120,6 +122,14 @@ pub(in crate::ui) fn non_default_preferences() -> Preferences {
             kind: 90,
             modified: 130,
         }),
+        list_column_order: vec![
+            ListColumnId::Name,
+            ListColumnId::Size,
+            ListColumnId::Type,
+            ListColumnId::Modified,
+            ListColumnId::Mode,
+        ],
+        list_hidden_columns: vec![ListColumnId::Mode],
     }
 }
 

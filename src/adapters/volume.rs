@@ -22,7 +22,9 @@ use crate::{
 };
 
 pub(crate) use mount_snapshot::{RemovableRoot, invalidate_mount_snapshot, with_mount_snapshot};
-pub(crate) use mounts::MountTable;
+#[cfg(test)]
+pub(crate) use mounts::set_mountinfo_for_isolated_test;
+pub(crate) use mounts::{MountKey, MountTable, is_fuse_fs_type, is_local_fuse_overlay};
 
 pub(crate) const REMOTE_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 

@@ -953,6 +953,7 @@ impl ViewState {
                         show_delete_error_dialog(
                             &state.overlay,
                             &message,
+                            &super::trash::delete_retry_label(&retryable_entries),
                             Rc::new(move || {
                                 if let Some(state) = weak_state.upgrade() {
                                     state.show_trash_unavailable_confirmation(

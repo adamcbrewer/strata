@@ -291,59 +291,109 @@ fn large_deletion_progress_reports_every_completed_location() -> Result<(), Box<
 }
 
 #[test]
-fn a_backend_without_trash_support_gets_an_actionable_message() {
-    let error = glib::Error::new(gio::IOErrorEnum::NotSupported, "trash not supported");
-
-    let trash_message = deletion_error_message("share-folder", false, &error);
-    assert!(trash_message.contains("doesn't support Trash"));
-    assert!(trash_message.contains("Delete permanently instead"));
-
-    let permanent_message = deletion_error_message("share-folder", true, &error);
-    assert!(!permanent_message.contains("Trash"));
-    assert!(permanent_message.contains("trash not supported"));
-}
-
-#[test]
-fn a_trash_attempt_that_fails_as_unsupported_is_retryable() {
-    let error = glib::Error::new(gio::IOErrorEnum::NotSupported, "trash not supported");
-    assert!(is_trash_unsupported_failure(false, &error));
-}
-
-#[test]
-fn an_already_permanent_delete_failure_is_never_retryable() {
-    // Nothing left to fall back to if a *permanent* delete itself failed
-    // with `NotSupported` -- retrying it the same way would just fail again.
-    let error = glib::Error::new(gio::IOErrorEnum::NotSupported, "trash not supported");
-    assert!(!is_trash_unsupported_failure(true, &error));
-}
-
-#[test]
-fn an_unrelated_trash_failure_is_not_retryable() {
-    let error = glib::Error::new(gio::IOErrorEnum::PermissionDenied, "access denied");
-    assert!(!is_trash_unsupported_failure(false, &error));
-}
-
-#[test]
-fn other_deletion_failures_name_the_item_and_reason() {
-    for (code, raw, expected) in [
+fn deletion_failures_explain_trash_problems_and_keep_other_details() {
+    use gio::IOErrorEnum as Io;
+    let unsupported = TrashError::from(glib::Error::new(Io::NotSupported, "trash not supported"));
+    let cases = [
         (
-            gio::IOErrorEnum::PermissionDenied,
-            "Unable to trash file /tmp/secret.txt: access denied",
-            "secret.txt: Permission denied",
+            unsupported,
+            true,
+            "share-folder: This location doesn't support Trash.",
         ),
         (
-            gio::IOErrorEnum::Failed,
-            "disk exploded",
-            "secret.txt: disk exploded",
+            TrashError::permanent(glib::Error::new(Io::NotSupported, "trash not supported")),
+            false,
+            "share-folder: trash not supported",
         ),
-    ] {
-        let error = glib::Error::new(code, raw);
-
-        assert_eq!(
-            deletion_error_message("secret.txt", false, &error),
-            expected
-        );
+        (
+            TrashError::from(glib::Error::new(Io::ReadOnly, "read-only")),
+            false,
+            "share-folder: This location is read-only.",
+        ),
+        (
+            TrashError::from(glib::Error::new(Io::NoSpace, "full")),
+            false,
+            "share-folder: Not enough space to move to Trash.",
+        ),
+        (
+            TrashError::from(glib::Error::new(
+                Io::PermissionDenied,
+                "Unable to trash file /tmp/secret.txt: access denied",
+            )),
+            false,
+            "share-folder: Permission denied",
+        ),
+        (
+            TrashError::from(glib::Error::new(Io::Failed, "disk exploded")),
+            false,
+            "share-folder: disk exploded",
+        ),
+    ];
+    for (error, retryable, expected) in cases {
+        assert_eq!(error.is_unsupported(), retryable, "{expected}");
+        assert_eq!(deletion_error_message("share-folder", &error), expected);
     }
+}
+
+#[test]
+fn a_refused_trash_is_retryable_and_remembered_only_on_fuse() -> Result<(), Box<dyn Error>> {
+    use crate::adapters::trash_support::{
+        tests::RefusingMount, tests::leftover_trash, unsupported_reason_in,
+    };
+    let _serial = ASYNC_MAIN_CONTEXT_DEFAULT
+        .lock()
+        .map_err(|error| error.to_string())?;
+    for (fs_type, unsupported) in [("fuse.sshfs", true), ("ext4", false)] {
+        let root = tempfile::tempdir()?;
+        let doomed = root.path().join("doomed.txt");
+        fs::write(&doomed, b"doomed")?;
+        let environment = Rc::new(RefusingMount::at(root.path(), 7301, fs_type));
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let emitted = events.clone();
+        glib::MainContext::default().block_on(run_deletion_in(
+            environment.clone(),
+            OperationRequestId(73),
+            vec![DeletionTarget::from_entry(&file_entry(&doomed))],
+            false,
+            Rc::new(move |event| emitted.borrow_mut().push(event)),
+            gio::Cancellable::new(),
+        ));
+
+        let events = events.borrow();
+        let Some(OperationEvent::CompletedWithErrors {
+            retryable_locations,
+            has_non_retryable_failures,
+            message,
+            ..
+        }) = events.last()
+        else {
+            panic!("{fs_type}: expected a partial failure, got {events:?}");
+        };
+        let expected_retryable = if unsupported {
+            vec![Location::local(&doomed)]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(retryable_locations, &expected_retryable, "{fs_type}");
+        assert_eq!(*has_non_retryable_failures, !unsupported, "{fs_type}");
+        assert_eq!(
+            message.contains("doomed.txt: This location doesn't support Trash."),
+            unsupported,
+            "{fs_type}: {message}"
+        );
+        assert_eq!(
+            unsupported_reason_in(&environment.mounts, &doomed).is_some(),
+            unsupported,
+            "{fs_type}"
+        );
+        assert_eq!(
+            leftover_trash(root.path()).exists(),
+            !unsupported,
+            "{fs_type}"
+        );
+        assert!(doomed.exists(), "{fs_type}");
+    }
+    Ok(())
 }
 
 #[test]

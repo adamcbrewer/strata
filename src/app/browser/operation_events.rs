@@ -502,6 +502,13 @@ impl Browser {
                 ..
             } => {
                 self.remove_completed_locations(&completion, &deleted_locations);
+                // The folder's Trash capability may have just been found missing.
+                let parents: HashSet<_> = retryable_locations
+                    .iter()
+                    .filter_map(Location::parent)
+                    .filter(|parent| parent.native_path().is_some())
+                    .collect();
+                self.refresh_columns_at_many(&parents);
                 self.emit(BrowserEvent::OperationCompletedWithErrors {
                     message,
                     retryable_locations,
