@@ -15,6 +15,7 @@ use gtk::{glib, prelude::*};
 use super::{BrowserView, FilterQueryBinding, ViewState, columns::ColumnView};
 use crate::{
     app::VisualKind,
+    model::FileEntry,
     services::SearchItem,
     ui::{browser_modes::BrowserMode, inline_search::InlineSearch},
 };
@@ -572,6 +573,30 @@ impl BrowserView {
         };
         target.flush();
         self.focus_filter_results(&target);
+    }
+
+    /// `None` while the current query is loading; otherwise its first displayed match.
+    pub(in crate::ui) fn first_settled_filter_match(&self) -> Option<Option<FileEntry>> {
+        let Some(target) = self.filter_target() else {
+            return Some(None);
+        };
+        target.settle();
+        if target.awaiting_results() {
+            return None;
+        }
+        let entry = match &target {
+            Target::Column(column) if !column.recursive_search_active.get() => {
+                let depth = self.state.filter_depth()?;
+                column
+                    .map
+                    .source_position(0)
+                    .and_then(|position| self.state.browser.entry_at(depth, position))
+            }
+            _ => target
+                .results()
+                .and_then(|results| results.first().map(super::collection::search_result_entry)),
+        };
+        Some(entry)
     }
 
     pub(in crate::ui) fn focus_visible_results(&self) -> bool {

@@ -501,6 +501,147 @@ pub(super) fn commit_filter(fixture: &KeyboardFixture, text: &str) {
 }
 
 #[test]
+fn tenxer_filter_slash_descends_and_keeps_filtering() {
+    crate::test_support::gtk_test(
+        "ui::window::tests::keyboard_dispatch::footer_prompt::tenxer_filter_slash_descends_and_keeps_filtering",
+        || {
+            let fixture = KeyboardFixture::new();
+            let root = fixture._directory.path();
+            for folder in ["Documents-a/Projects", "Documents-b/Projects", "Archive"] {
+                std::fs::create_dir_all(root.join(folder)).expect("fixture folder");
+            }
+            enable_tenxer(&fixture);
+            let browser = fixture.view.browser();
+            let none = ModifierType::empty();
+            for mode in [BrowserMode::Columns, BrowserMode::List, BrowserMode::Icons] {
+                fixture.view.set_view_mode(mode);
+                for query in ["Documents-a", "doc", "dcm"] {
+                    browser.navigate(Location::local(root));
+                    wait_loaded(&browser, 0);
+                    focus_files(&fixture);
+                    assert!(fixture.press(Key::f, none));
+                    fixture.shortcuts.prompt().set_text(query);
+                    let first = if query == "Documents-a" {
+                        "Documents-a".to_owned()
+                    } else {
+                        wait_results(&fixture, &["Documents-a", "Documents-b"]);
+                        let order = fixture.view.filter_result_names();
+                        assert!(fixture.press(Key::Down, none));
+                        assert!(fixture.press(Key::Down, none));
+                        assert_eq!(selected_result_names(&fixture), [order[1].clone()]);
+                        order[0].clone()
+                    };
+                    let destination = root.join(first);
+                    assert!(fixture.press(Key::slash, none), "{mode:?} {query}");
+                    wait_until_or(
+                        || browser.active_location() == Some(Location::local(&destination)),
+                        || {
+                            format!(
+                                "{mode:?} {query}: location {:?}, prompt {:?}, results {:?}",
+                                browser.active_location(),
+                                fixture.shortcuts.prompt_text(),
+                                fixture.view.filter_result_names()
+                            )
+                        },
+                    );
+                    wait_loaded(&browser, 0);
+                    assert_eq!(fixture.shortcuts.open_prompt_kind(), Some(Prompt::Filter));
+                    assert!(fixture.shortcuts.prompt_has_focus(), "{mode:?} {query}");
+                    assert_eq!(fixture.shortcuts.prompt_text(), "");
+                    assert_eq!(fixture.view.listing_filter(), None);
+                    fixture.shortcuts.prompt().set_text("proj");
+                    assert!(fixture.press(Key::slash, none));
+                    wait_until_or(
+                        || {
+                            browser.active_location()
+                                == Some(Location::local(destination.join("Projects")))
+                        },
+                        || {
+                            format!(
+                                "{mode:?} {query}, child: location {:?}, prompt {:?}, results {:?}",
+                                browser.active_location(),
+                                fixture.shortcuts.prompt_text(),
+                                fixture.view.filter_result_names()
+                            )
+                        },
+                    );
+                    wait_loaded(&browser, 0);
+                    assert!(fixture.shortcuts.prompt_has_focus(), "{mode:?}");
+                    assert_eq!(fixture.shortcuts.prompt_text(), "");
+                    assert!(fixture.press(Key::Escape, none));
+                }
+            }
+        },
+    );
+}
+
+#[test]
+fn tenxer_filter_slash_uses_the_latest_query_and_rejects_files_and_misses() {
+    crate::test_support::gtk_test(
+        "ui::window::tests::keyboard_dispatch::footer_prompt::tenxer_filter_slash_uses_the_latest_query_and_rejects_files_and_misses",
+        || {
+            let fixture = KeyboardFixture::new();
+            let root = fixture._directory.path();
+            for folder in ["Documents", "Archive", "reports"] {
+                std::fs::create_dir(root.join(folder)).expect("fixture folder");
+            }
+            std::fs::write(root.join("report"), b"file").expect("fixture file");
+            enable_tenxer(&fixture);
+            let browser = fixture.view.browser();
+            let none = ModifierType::empty();
+            for mode in [BrowserMode::Columns, BrowserMode::List, BrowserMode::Icons] {
+                fixture.view.set_view_mode(mode);
+                browser.navigate(Location::local(root));
+                fixture.view.refresh();
+                wait_loaded(&browser, 0);
+                focus_files(&fixture);
+                assert!(fixture.press(Key::f, none));
+                for query in ["", "no-such-match", "report"] {
+                    fixture.shortcuts.prompt().set_text(query);
+                    let generation = browser.navigation_generation();
+                    assert!(fixture.press(Key::slash, none), "{mode:?} {query}");
+                    pump(350);
+                    assert_eq!(
+                        browser.navigation_generation(),
+                        generation,
+                        "{mode:?} {query}"
+                    );
+                    assert!(fixture.shortcuts.prompt_has_focus());
+                    assert_eq!(fixture.shortcuts.prompt_text(), query);
+                }
+                fixture.shortcuts.prompt().set_text("doc");
+                wait_results(&fixture, &["Documents"]);
+                fixture.shortcuts.prompt().set_text("arc");
+                assert!(fixture.press(Key::slash, none));
+                fixture.shortcuts.prompt().set_text("report");
+                pump(350);
+                assert_eq!(browser.active_location(), Some(Location::local(root)));
+                assert_eq!(fixture.shortcuts.prompt_text(), "report");
+                fixture.shortcuts.prompt().set_text("arc");
+                assert!(fixture.press(Key::slash, none));
+                wait_until(|| {
+                    browser.active_location() == Some(Location::local(root.join("Archive")))
+                });
+                wait_loaded(&browser, 0);
+                assert!(fixture.shortcuts.prompt_has_focus());
+                assert_eq!(fixture.shortcuts.prompt_text(), "");
+                assert!(fixture.press(Key::Escape, none));
+                browser.navigate(Location::local(root));
+                wait_loaded(&browser, 0);
+                focus_files(&fixture);
+                assert!(fixture.press(Key::f, none));
+                fixture.shortcuts.prompt().set_text("doc");
+                assert!(fixture.press(Key::slash, none));
+                assert!(fixture.press(Key::Escape, none));
+                pump(350);
+                assert_eq!(fixture.shortcuts.open_prompt_kind(), None);
+                assert_eq!(browser.active_location(), Some(Location::local(root)));
+            }
+        },
+    );
+}
+
+#[test]
 fn tenxer_filter_commits_results_without_touching_the_hidden_directory() {
     crate::test_support::gtk_test(
         "ui::window::tests::keyboard_dispatch::footer_prompt::tenxer_filter_commits_results_without_touching_the_hidden_directory",

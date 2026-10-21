@@ -570,6 +570,45 @@ fn live_mode_changes_switch_the_chooser_between_maps() {
 }
 
 #[test]
+fn tenxer_filter_slash_enters_folders_without_accepting_the_chooser() {
+    crate::test_support::gtk_test(
+        "ui::chooser::tests::keyboard::tenxer_filter_slash_enters_folders_without_accepting_the_chooser",
+        || {
+            for mode in [BrowserMode::Columns, BrowserMode::List, BrowserMode::Icons] {
+                let chooser = Chooser::open(
+                    ChooserKind::Open {
+                        directory: true,
+                        multiple: false,
+                    },
+                    mode,
+                    &["Documents/Projects/"],
+                );
+                chooser.focus_files();
+                assert!(chooser.press(Key::f));
+                for (query, destination) in [("doc", "Documents"), ("proj", "Documents/Projects")] {
+                    chooser.prompt().set_text(query);
+                    assert!(chooser.press(Key::slash), "{mode:?} {query}");
+                    wait_until(|| {
+                        chooser.state.view.browser().active_location()
+                            == Some(Location::local(chooser.root.path().join(destination)))
+                            && chooser.prompt_focused()
+                    });
+                    assert_eq!(chooser.prompt().text(), "");
+                    assert!(
+                        chooser.open_request(),
+                        "{mode:?}: slash accepted the folder"
+                    );
+                }
+                assert!(chooser.press(Key::Escape));
+                assert!(chooser.open_request());
+                assert!(chooser.press(Key::Escape));
+                assert!(chooser.cancelled());
+            }
+        },
+    );
+}
+
+#[test]
 fn folder_only_search_hits_exclude_files_and_choose_the_focused_folder() {
     crate::test_support::gtk_test(
         "ui::chooser::tests::keyboard::folder_only_search_hits_exclude_files_and_choose_the_focused_folder",
