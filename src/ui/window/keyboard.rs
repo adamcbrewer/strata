@@ -306,9 +306,14 @@ fn bind_footer_filter(dispatcher: &Dispatcher) {
     // GTK may land that focus after the selection change has been reported. In
     // Columns the footer also follows the focused column.
     let shortcuts = dispatcher.shortcuts.clone();
-    let handler = dispatcher
-        .window
-        .connect_focus_widget_notify(move |_| shortcuts.schedule_filter_refresh());
+    let view = dispatcher.view.downgrade();
+    let descent = dispatcher.filter_descent.clone();
+    let handler = dispatcher.window.connect_focus_widget_notify(move |_| {
+        shortcuts.schedule_filter_refresh();
+        if let Some(view) = view.upgrade() {
+            prompts::cancel_stale_filter_descent(&view, &shortcuts, &descent);
+        }
+    });
     // A closed tab's view unrealizes while its window lives on.
     let window = dispatcher.window.downgrade();
     let handler = Cell::new(Some(handler));
@@ -682,7 +687,9 @@ impl Dispatcher {
 
     fn handle_chooser_key(&self, browser: &Rc<Browser>, press: &KeyPress) -> KeyResult {
         if !self.type_to_search.preferences.tenxer_mode() {
-            return self.tenxer_keys(browser, press);
+            return self
+                .normal_filter_keys(press)
+                .or_else(|| self.tenxer_keys(browser, press));
         }
         if !press.is_modifier() {
             self.open_with.invalidate();
@@ -822,6 +829,9 @@ impl Dispatcher {
                 return Some(result);
             }
             return Some(self.prompt_key(browser, press));
+        }
+        if let Some(result) = self.normal_filter_keys(press) {
+            return Some(result);
         }
         if self
             .preview
