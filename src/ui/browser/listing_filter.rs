@@ -212,6 +212,13 @@ impl Target {
         }
     }
 
+    fn has_pending_results(&self) -> bool {
+        match self {
+            Self::Column(column) => column.search_session.has_pending_results(),
+            Self::Pane { search, .. } => search.has_pending_results(),
+        }
+    }
+
     pub(super) fn hits(&self) -> Option<Hits> {
         match self {
             Self::Column(column) => column.recursive_search_active.get().then(|| Hits {
@@ -521,6 +528,12 @@ impl BrowserView {
         self.state.filter_focus()
     }
 
+    pub(in crate::ui) fn focused_filter_entry(&self) -> Option<gtk::Entry> {
+        (self.filter_focus() == Some(FilterFocus::Entry))
+            .then(|| self.filter_target().map(|target| target.entry().clone()))
+            .flatten()
+    }
+
     pub(in crate::ui) fn listing_filter(&self) -> Option<String> {
         let target = self.filter_target()?;
         let text = if target.searching() {
@@ -581,22 +594,26 @@ impl BrowserView {
             return Some(None);
         };
         target.settle();
+        if matches!(&target, Target::Pane { .. }) && !target.has_query_binding() {
+            self.state.mode_views.borrow().settle_in_place_filter();
+        }
         if target.awaiting_results() {
             return None;
         }
-        let entry = match &target {
-            Target::Column(column) if !column.recursive_search_active.get() => {
+        let entry = match target.results() {
+            Some(results) => results.first().map(super::collection::search_result_entry),
+            None => {
                 let depth = self.state.filter_depth()?;
-                column
-                    .map
-                    .source_position(0)
+                self.displayed_order(depth)
+                    .and_then(|order| order.first().copied())
                     .and_then(|position| self.state.browser.entry_at(depth, position))
             }
-            _ => target
-                .results()
-                .and_then(|results| results.first().map(super::collection::search_result_entry)),
         };
-        Some(entry)
+        if entry.is_none() && target.has_pending_results() {
+            None
+        } else {
+            Some(entry)
+        }
     }
 
     pub(in crate::ui) fn focus_visible_results(&self) -> bool {
