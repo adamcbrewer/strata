@@ -30,6 +30,39 @@ use crate::{
 
 const SHIFT: Modifiers = Modifiers::SHIFT_MASK;
 
+pub(super) struct FilterDescent {
+    navigation: u64,
+    query: String,
+}
+
+pub(super) fn finish_filter_descent(
+    view: &BrowserView,
+    shortcuts: &ShortcutFooter,
+    pending: &RefCell<Option<FilterDescent>>,
+) {
+    let browser = view.browser();
+    let current = pending.borrow().as_ref().is_some_and(|pending| {
+        browser.navigation_generation() == pending.navigation
+            && shortcuts.open_prompt_kind() == Some(Prompt::Filter)
+            && shortcuts.prompt_has_focus()
+            && shortcuts.prompt_text() == pending.query
+    });
+    if !current {
+        pending.take();
+        return;
+    }
+    let Some(entry) = view.first_settled_filter_match() else {
+        return;
+    };
+    pending.take();
+    if let Some(entry) = entry.filter(FileEntry::is_directory) {
+        shortcuts.dismiss_prompt();
+        view.keyboard_navigation();
+        browser.navigate(entry.location);
+        shortcuts.open_prompt(Prompt::Filter);
+    }
+}
+
 impl Dispatcher {
     pub(super) fn tenxer_prompt_keys(&self, press: &KeyPress) -> KeyResult {
         if !self.view.item_view_has_focus() {
@@ -121,6 +154,15 @@ impl Dispatcher {
             }
         } else if press.is(ENTER_ANY_SHIFT) {
             self.submit_prompt(browser);
+        } else if kind == Some(Prompt::Filter) && press.is(FILTER_DESCEND) {
+            let query = self.shortcuts.prompt_text();
+            if !query.trim().is_empty() {
+                self.filter_descent.replace(Some(FilterDescent {
+                    navigation: browser.navigation_generation(),
+                    query,
+                }));
+                finish_filter_descent(&self.view, &self.shortcuts, &self.filter_descent);
+            }
         } else if let Some(delta) = step
             && kind.is_some_and(Prompt::picks_history)
         {

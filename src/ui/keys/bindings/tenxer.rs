@@ -93,6 +93,8 @@ catalog! {
         TAB_CHORD_NUMBERS: Digits = Digits::after(TAB_CHORD, 9, true);
     }
     unlisted {
+        FILTER_DESCEND: Binding = Binding::plain(Key::slash);
+
         // Where no tab strip takes them first, as in file choosers, these page too.
         TENXER_PAGE_UP_PAGE_UP: Binding = Binding::ctrl(Key::Page_Up);
         TENXER_PAGE_DOWN_PAGE_DOWN: Binding = Binding::ctrl(Key::Page_Down);
