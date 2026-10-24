@@ -1503,7 +1503,7 @@
   "Units": "Einheiten",
   "Metric": "Metrisch",
   "Imperial": "Imperial",
-  "Distance and elevation in route previews.": "Entfernung und Höhe in Routenvorschauen.",
+  "For things like distances, heights and volumes.": "Für Angaben wie Entfernungen, Höhen und Volumen.",
   "settings_keywords.units": "metrisch imperial Kilometer Meilen Meter Fuß Entfernung Höhe Route gpx fit kml",
   "%{distance} mi": "%{distance} mi",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft",

@@ -1503,7 +1503,7 @@
   "Units": "Единицы измерения",
   "Metric": "Метрические",
   "Imperial": "Имперские",
-  "Distance and elevation in route previews.": "Расстояние и высота в предпросмотре маршрутов.",
+  "For things like distances, heights and volumes.": "Для таких величин, как расстояние, высота и объём.",
   "settings_keywords.units": "метрические имперские километры мили метры футы расстояние высота маршрут gpx fit kml",
   "%{distance} mi": "%{distance} мили",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} фут.",

@@ -31,7 +31,7 @@ pub(super) fn general_page(
     let units = super::unit_system_control(&manager);
     preferences.append(&super::control_row(
         "Units",
-        "Distance and elevation in route previews.",
+        "For things like distances, heights and volumes.",
         &units,
     ));
     append_browsing_options(&preferences, &manager);

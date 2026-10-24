@@ -1503,7 +1503,7 @@
   "Units": "단위",
   "Metric": "미터법",
   "Imperial": "야드파운드법",
-  "Distance and elevation in route previews.": "경로 미리보기의 거리와 고도입니다.",
+  "For things like distances, heights and volumes.": "거리, 높이, 부피 등의 단위에 사용됩니다.",
   "settings_keywords.units": "미터법 야드파운드법 킬로미터 마일 미터 피트 거리 고도 경로 gpx fit kml",
   "%{distance} mi": "%{distance}마일",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum}피트",

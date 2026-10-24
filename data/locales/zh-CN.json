@@ -1503,7 +1503,7 @@
   "Units": "单位",
   "Metric": "公制",
   "Imperial": "英制",
-  "Distance and elevation in route previews.": "路线预览中的距离和海拔。",
+  "For things like distances, heights and volumes.": "用于距离、高度和体积等测量值。",
   "settings_keywords.units": "公制 英制 千米 英里 米 英尺 距离 海拔 路线 gpx fit kml",
   "%{distance} mi": "%{distance} 英里",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} 英尺",

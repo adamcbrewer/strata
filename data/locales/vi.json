@@ -1503,7 +1503,7 @@
   "Units": "Đơn vị",
   "Metric": "Hệ mét",
   "Imperial": "Hệ Anh",
-  "Distance and elevation in route previews.": "Khoảng cách và độ cao trong bản xem trước tuyến đường.",
+  "For things like distances, heights and volumes.": "Dùng cho các đại lượng như khoảng cách, chiều cao và thể tích.",
   "settings_keywords.units": "hệ mét hệ Anh kilômét dặm mét foot khoảng cách độ cao tuyến đường gpx fit kml",
   "%{distance} mi": "%{distance} dặm",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft",

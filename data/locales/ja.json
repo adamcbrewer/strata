@@ -1503,7 +1503,7 @@
   "Units": "単位",
   "Metric": "メートル法",
   "Imperial": "ヤード・ポンド法",
-  "Distance and elevation in route previews.": "ルートプレビューの距離と標高。",
+  "For things like distances, heights and volumes.": "距離、高さ、体積などの単位に使用します。",
   "settings_keywords.units": "メートル法 ヤード・ポンド法 キロメートル マイル メートル フィート 距離 標高 ルート gpx fit kml",
   "%{distance} mi": "%{distance} マイル",
   "%{minimum}–%{maximum} ft": "%{minimum}～%{maximum} フィート",

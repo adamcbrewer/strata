@@ -1503,7 +1503,7 @@
   "Units": "單位",
   "Metric": "公制",
   "Imperial": "英制",
-  "Distance and elevation in route previews.": "路線預覽中的距離與海拔。",
+  "For things like distances, heights and volumes.": "用於距離、高度和體積等測量值。",
   "settings_keywords.units": "公制 英制 公里 英里 公尺 英尺 距離 海拔 路線 gpx fit kml",
   "%{distance} mi": "%{distance} 英里",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} 英尺",
