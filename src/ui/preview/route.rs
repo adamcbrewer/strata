@@ -92,7 +92,7 @@ impl PreviewState {
         );
         badges.append(&distance_badge);
         if let Some(seconds) = preview.duration_seconds {
-            badges.append(&components::badge(&super::fmt_time(
+            badges.append(&components::badge(&super::audio::clock(
                 seconds as i64 * 1_000_000,
             )));
         }
