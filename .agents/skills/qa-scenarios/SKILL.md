@@ -243,8 +243,9 @@ Step modifiers: `"modes":[...]`, `"variants":[...]`, `"when":PREDICATE`,
 - **`quality`** is
   `{"impact","coverage","criticality","diagnostic","score","note"}`; the
   runner checks the shape and recomputes `score`. Use the `qa-quality` skill
-  to rate a scenario and compute the score; re-rate when the scenario's
-  behaviour or coverage changes.
+  to rate a scenario and compute the score, including its independent
+  cheap-model grading; re-rate when the scenario's behaviour or coverage
+  changes.
 
 ## Manage scenarios
 
@@ -353,7 +354,8 @@ traces still appear. See "Main-thread I/O audit" in `docs/testing.md`.
 - [ ] Each run passes by name, repeatedly, and in a full `./scripts/qa.sh`;
       the scenario was shown to fail when the behaviour breaks.
 - [ ] `cost` covers exactly the run labels; `quality`, if present, was
-      re-rated with the `qa-quality` skill.
+      re-rated with the `qa-quality` skill and checked by its independent
+      cheap-model grader.
 - [ ] `skip`, `known_bug`, and any wait for the app's own timers carry an
       issue and are listed in the guide.
 - [ ] A scenario with a `mutation` still catches it:

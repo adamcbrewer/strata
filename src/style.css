@@ -3636,16 +3636,16 @@ button.shortcut-footer-button {
 
 .shortcut-footer-button > button:hover,
 button.shortcut-footer-button:hover {
-  background: @strata_highlight;
+  background: alpha(@strata_accent, 0.15);
   color: @strata_text;
-  border-color: @strata_border;
+  border-color: alpha(@strata_accent, 0.42);
 }
 
 .shortcut-footer-button > button:active,
 .shortcut-footer-button > button:checked,
 button.shortcut-footer-button:active,
 button.shortcut-footer-button:checked {
-  background: @strata_highlight;
+  background: alpha(@strata_accent, 0.22);
   color: @strata_text;
   border-color: @strata_accent;
 }
@@ -5362,6 +5362,14 @@ textview > popover.menu button.model:focus-visible,
   outline-offset: -1px;
 }
 
+/* The result Enter in the filter field opens; not a selection. */
+.file-row.enter-target,
+.list-row.enter-target,
+.icons-card.enter-target {
+  outline: 1px solid @strata_accent;
+  outline-offset: -1px;
+}
+
 .directory-column:not(:focus-within) .file-list:not(.context-selection) row:selected,
 .file-list-mode:not(:focus-within):not(.context-selection) row:selected {
   background: alpha(@strata_accent, 0.08);
@@ -6035,6 +6043,19 @@ menubutton.icons-thumbnail-menu > button:focus-visible {
 .list-heading-button:focus-visible {
   outline: 2px solid @strata_accent;
   outline-offset: -2px;
+}
+
+.list-headings.column-reordering .list-heading-button {
+  transform: none;
+  transition: none;
+}
+
+.list-heading-cell.reorder-before .list-heading-button {
+  box-shadow: inset 3px 0 @strata_accent;
+}
+
+.list-heading-cell.reorder-after .list-heading-button {
+  box-shadow: inset -3px 0 @strata_accent;
 }
 
 .list-column-resize-handle {

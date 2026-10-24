@@ -662,6 +662,7 @@
   "Rename the focused item in the footer": "Rename the focused item in the footer",
   "Rendering page %{completed} of %{total}": "Rendering page %{completed} of %{total}",
   "Rendering pages for the print dialog": "Rendering pages for the print dialog",
+  "Reopen the last closed tab": "Reopen the last closed tab",
   "Repeat the last find / in reverse": "Repeat the last find / in reverse",
   "Replace": "Replace",
   "Replace existing file?": "Replace existing file?",

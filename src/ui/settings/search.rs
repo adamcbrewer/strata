@@ -290,6 +290,12 @@ const TARGETS: &[Target] = &[
         aliases: "appearance images pictures photos videos documents thumbnails icons previews disable",
     },
     Target {
+        id: "stl-thumbnails",
+        page: "theme",
+        title: "STL model thumbnails",
+        aliases: "appearance 3d stl models printing mesh rendered thumbnails icons",
+    },
+    Target {
         id: "file-icon-colors",
         page: "theme",
         title: "File icon colors",

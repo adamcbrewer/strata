@@ -32,7 +32,8 @@ use super::{
     check_archive_cancelled,
     destination::{
         ExtractNameResolver, ExtractionDestination, Unmade, archive_stem, creation_failed,
-        hard_link_failed, process_umask, sanitized_archive_path, symlink_failed,
+        hard_link_failed, names_archive_root, process_umask, sanitized_archive_path,
+        symlink_failed,
     },
 };
 
@@ -263,6 +264,9 @@ impl<'a> ExtractionSession<'a> {
         content: MemberContent<'_>,
         metadata: MemberMetadata,
     ) -> Result<(), ArchiveError> {
+        if matches!(content, MemberContent::Directory) && names_archive_root(name.as_ref()) {
+            return Ok(());
+        }
         let path = sanitized_archive_path(&name)?;
         let name = name.as_ref().to_string_lossy();
         if let Err(error) = self.check_cancelled() {

@@ -642,6 +642,7 @@
   "Rename the focused item in the footer": "在頁尾重新命名聚焦的項目",
   "Rendering page %{completed} of %{total}": "正在算繪第 %{completed} 頁，共 %{total} 頁",
   "Rendering pages for the print dialog": "正在為列印對話框算繪頁面",
+  "Reopen the last closed tab": "重新開啟上次關閉的分頁",
   "Repeat the last find / in reverse": "反向重複上一次尋找",
   "Replace": "取代",
   "Replace existing file?": "取代現有檔案？",

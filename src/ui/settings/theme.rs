@@ -330,6 +330,18 @@ fn append_file_icon_colors_option(content: &gtk::Box, preferences: &Rc<Preferenc
         PreferenceManager::set_show_thumbnails,
     );
     group.append(&row);
+    let (row, toggle) = super::settings_option(
+        "STL model thumbnails",
+        "Render local STL models as file thumbnails, one at a time. Requires Show thumbnails.",
+        preferences.stl_thumbnails(),
+    );
+    bind_switch(
+        preferences,
+        &toggle,
+        PreferenceManager::stl_thumbnails,
+        PreferenceManager::set_stl_thumbnails,
+    );
+    group.append(&row);
 }
 
 fn append_omarchy_variant_option(
@@ -341,16 +353,16 @@ fn append_omarchy_variant_option(
         preferences,
         "Omarchy variant",
         &[
-            ("Original", OmarchyVariant::Original),
+            ("Lighter", OmarchyVariant::Lighter),
             ("Darker", OmarchyVariant::Darker),
-            ("High contrast", OmarchyVariant::HighContrast),
+            ("Contrast", OmarchyVariant::Contrast),
         ],
         PreferenceManager::omarchy_variant,
         PreferenceManager::set_omarchy_variant,
     );
     let row = super::control_row(
         "Omarchy variant",
-        "Original palette mapping, darker surfaces, or stronger contrast. Keeps following your system theme.",
+        "Lighter or darker file columns, or stronger contrast. Keeps following your system theme.",
         &choice,
     );
     super::indent_row(&row);

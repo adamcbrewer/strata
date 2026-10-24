@@ -489,19 +489,35 @@ fn quattro_colors_map_to_strata_tokens() {
         "azure-glow",
         r##"
 background = "#0a0f1a"
+dark_background = "#070b13"
+lighter_background = "#142033"
 foreground = "#a8dfff"
 accent = "#00aaff"
-selection = "#a8dfff"
-color8 = "#123247"
+selection = "#1d3350"
+muted = "#3a5068"
+color8 = "#99aabb"
 "##,
-        super::OmarchyVariant::Original,
+        super::OmarchyVariant::Lighter,
     )
     .expect("valid Quattro colors should map");
 
     assert_eq!(theme.name, "Azure Glow");
-    assert_eq!(theme.background, "#0d1b2a");
+    assert_eq!(theme.background, "#0a0f1a");
+    assert_eq!(theme.surface, "#070b13");
+    assert_eq!(theme.muted, "#142033");
+    assert_eq!(theme.highlight, "#1d3350");
+    assert_eq!(theme.border, "#3a5068");
     assert_eq!(theme.accent, "#00aaff");
-    assert_eq!(theme.border, "#487089");
+
+    let minimal = tokens_from_quattro(
+        "azure-glow",
+        "background = \"#0a0f1a\"\nlighter_background = \"#0a0f1a\"\nforeground = \"#a8dfff\"\naccent = \"#00aaff\"\ncolor8 = \"#99aabb\"\n",
+        super::OmarchyVariant::Lighter,
+    )
+    .expect("required Quattro colors should map");
+    assert_eq!(minimal.background, "#0a0f1a");
+    assert_eq!(minimal.surface, "#0a0f1a");
+    assert_ne!(minimal.muted, minimal.background);
     let derived = super::resolved_source_palette(&theme, None);
     for (source, expected) in [
         ("color2 = \"#00ff00\"", "#00ff00"),
@@ -511,7 +527,7 @@ color8 = "#123247"
         let source = format!(
             "background = \"#0a0f1a\"\nforeground = \"#a8dfff\"\naccent = \"#00aaff\"\nselection = \"#a8dfff\"\ncolor8 = \"#123247\"\n{source}"
         );
-        let tokens = tokens_from_quattro("azure-glow", &source, super::OmarchyVariant::Original)
+        let tokens = tokens_from_quattro("azure-glow", &source, super::OmarchyVariant::Lighter)
             .expect("partial Quattro palette");
         let palette = super::resolved_source_palette(&tokens, None);
         assert_eq!(palette.string, expected);
@@ -591,7 +607,7 @@ fn quattro_syntax_palette_treats_unparsable_colors_as_missing() {
         "background = \"#0a0f1a\"\nforeground = \"#a8dfff\"\naccent = \"#00aaff\"\n{}",
         source_with("orange", "0x555555").replace("#666666", "notacolor")
     );
-    let tokens = tokens_from_quattro("azure-glow", &source, super::OmarchyVariant::Original)
+    let tokens = tokens_from_quattro("azure-glow", &source, super::OmarchyVariant::Lighter)
         .expect("required Quattro colors are valid");
     let xml = source_style_scheme_xml(&tokens, source_palette_from_quattro(&source).as_ref());
     let values = scheme_color_values(&xml);
@@ -610,7 +626,7 @@ fn legacy_palette_without_quattro_semantics_is_not_detected() {
         tokens_from_quattro(
             "legacy",
             "color4 = \"#00aaff\"",
-            super::OmarchyVariant::Original
+            super::OmarchyVariant::Lighter
         )
         .is_none()
     );

@@ -21,6 +21,10 @@ for the full rules.
 
 In regular and 10xer modes, **Ctrl+T** opens a tab at the active location,
 **Ctrl+W** closes the active tab, and **Ctrl+Tab / Ctrl+Shift+Tab** cycles tabs.
+**Ctrl+Shift+T** reopens the last closed tab at its previous location and position.
+Repeat it to reopen up to 20 recently closed tabs in reverse closure order.
+Closed-tab history belongs to the current window and is cleared when it closes;
+reopened tabs start with fresh selection, navigation history, and preview state.
 **Ctrl+Page Up / Ctrl+Page Down** selects the previous / next tab in strip order,
 wrapping at either end, like the tab shortcuts in web browsers.
 **Ctrl+Shift+Page Up / Ctrl+Shift+Page Down** moves the active tab one position
@@ -203,7 +207,9 @@ exists again; either way the filter ends. Neither adds a history entry.
 
 ## Preview while filtering
 
-In the browser and file chooser, **Down** from the Ctrl+F input focuses the selected result, or the first result if none is selected. **Up/Down** then navigate the results; **Up** from the first result returns to the input without clearing the query. **Ctrl+F** also returns to the input. With no matches, Down leaves focus in the input.
+In the browser and file chooser, **Enter** in the Ctrl+F input opens the top result. While the input has focus, the top result is outlined to show it, and stays scrolled into view as results arrive until you scroll the list yourself. Moving to or clicking another result makes Enter open that one instead, and takes the outline off. Changing the query drops that choice and the results' selection, so the outline and Enter return to the new top result. In a folder without a local path, such as a network share, the input narrows the listing itself instead of showing separate results; there a new query keeps the folder's selection, so Space and file actions still act on it, but Enter returns to the new top result all the same. The outline is not a selection: Space and file actions still need a selected result. The [10xer](10xer-mode.md) **f** and **s** prompts keep their own two-step Enter and show no outline.
+
+**Down** from the Ctrl+F input focuses the outlined top result, or the selected result once you have chosen one. **Up/Down** then navigate the results; **Up** from the first result returns to the input without clearing the query. **Ctrl+F** also returns to the input. With no matches, Down leaves focus in the input.
 
 **Menu/Shift+F10** on a focused result opens its file menu. While the input itself is focused, its text-editing menu remains available. **Space** toggles quick preview for a selected file result in Columns, Icons, and List, including after returning to the query. Previewing a file keeps the query, selection, and current directory intact; on a selected folder result, Space navigates into the folder instead.
 

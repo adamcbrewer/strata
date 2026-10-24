@@ -57,10 +57,12 @@ pub(crate) enum InterfaceRenderer {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OmarchyVariant {
+    #[serde(alias = "original")]
+    Lighter,
     #[default]
-    Original,
     Darker,
-    HighContrast,
+    #[serde(alias = "high_contrast")]
+    Contrast,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -83,8 +85,11 @@ pub(crate) enum UnitSystem {
 pub(in crate::ui) struct Preferences {
     mode: String,
     theme: String,
-    #[serde(default)]
-    omarchy_variant: OmarchyVariant,
+    /// Pre-per-theme global choice, migrated to the active Omarchy theme.
+    #[serde(default, rename = "omarchy_variant", skip_serializing)]
+    legacy_omarchy_variant: Option<OmarchyVariant>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    omarchy_variants: HashMap<String, OmarchyVariant>,
     #[serde(default)]
     folder_peeking: bool,
     #[serde(default = "default_enabled")]
@@ -215,6 +220,8 @@ pub(in crate::ui) struct Preferences {
     thumbnail_workers: usize,
     #[serde(default = "default_enabled")]
     show_thumbnails: bool,
+    #[serde(default)]
+    stl_thumbnails: bool,
     #[serde(default = "default_icons_thumbnail_size")]
     icons_thumbnail_size: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -368,7 +375,8 @@ impl Default for Preferences {
         Self {
             mode: "theme".to_owned(),
             theme: "tokyo-night".to_owned(),
-            omarchy_variant: OmarchyVariant::default(),
+            legacy_omarchy_variant: None,
+            omarchy_variants: HashMap::new(),
             folder_peeking: false,
             single_click_previews: true,
             columns_mirror_selection: true,
@@ -434,6 +442,7 @@ impl Default for Preferences {
             watch_network_folders: true,
             thumbnail_workers: crate::sandbox::browser::default_worker_limit(),
             show_thumbnails: true,
+            stl_thumbnails: false,
             icons_thumbnail_size: default_icons_thumbnail_size(),
             chooser_column_width: None,
             browser_column_width: None,
@@ -648,6 +657,7 @@ pub struct PreferenceManager {
     folder_sorts_revision: Cell<u64>,
     folder_save_notices: save_notice::SaveNotices,
     item_customizations: item_customizations::ItemCustomizationState,
+    active_omarchy_theme: RefCell<Option<String>>,
 }
 
 impl PreferenceManager {
@@ -715,6 +725,7 @@ impl PreferenceManager {
             folder_sorts_revision: Cell::new(0),
             folder_save_notices: save_notice::SaveNotices::for_folder_views(),
             item_customizations: Default::default(),
+            active_omarchy_theme: RefCell::new(None),
             preferences: RefCell::new(preferences),
         });
         manager.folder_view_store();
@@ -1097,16 +1108,54 @@ impl PreferenceManager {
         self.save_preferences();
     }
 
+    /// The variant remembered for the active Omarchy theme.
     pub fn omarchy_variant(&self) -> OmarchyVariant {
-        self.preferences.borrow().omarchy_variant
+        let active = self.active_omarchy_theme.borrow();
+        active
+            .as_ref()
+            .and_then(|theme| {
+                self.preferences
+                    .borrow()
+                    .omarchy_variants
+                    .get(theme)
+                    .copied()
+            })
+            .unwrap_or_default()
     }
 
     pub fn set_omarchy_variant(&self, variant: OmarchyVariant) {
+        let Some(theme) = self.active_omarchy_theme.borrow().clone() else {
+            return;
+        };
         if self.omarchy_variant() == variant {
             return;
         }
-        self.preferences.borrow_mut().omarchy_variant = variant;
+        {
+            let variants = &mut self.preferences.borrow_mut().omarchy_variants;
+            if variant == OmarchyVariant::default() {
+                variants.remove(&theme);
+            } else {
+                variants.insert(theme, variant);
+            }
+        }
         self.save_preferences();
+    }
+
+    /// Records which Omarchy theme is current without publishing; the theme
+    /// manager reapplies and notifies once its palette state is updated.
+    pub(in crate::ui) fn set_active_omarchy_theme(&self, theme: &str) {
+        let theme = theme.trim().to_owned();
+        let mut preferences = self.preferences.borrow_mut();
+        // Older versions always saved "original", so only a contrast choice was deliberate.
+        if let Some(legacy) = preferences.legacy_omarchy_variant.take()
+            && legacy == OmarchyVariant::Contrast
+        {
+            preferences
+                .omarchy_variants
+                .entry(theme.clone())
+                .or_insert(legacy);
+        }
+        self.active_omarchy_theme.replace(Some(theme));
     }
 
     pub fn element_glow(&self) -> bool {
@@ -1219,6 +1268,15 @@ impl PreferenceManager {
         self.preferences.borrow().thumbnail_workers
     }
 
+    pub fn stl_thumbnails(&self) -> bool {
+        self.preferences.borrow().stl_thumbnails
+    }
+
+    pub fn set_stl_thumbnails(&self, enabled: bool) {
+        self.preferences.borrow_mut().stl_thumbnails = enabled;
+        self.save_preferences();
+    }
+
     pub fn set_thumbnail_workers(&self, workers: usize) {
         self.preferences.borrow_mut().thumbnail_workers =
             workers.clamp(1, crate::sandbox::browser::MAX_WORKERS);
@@ -1309,12 +1367,21 @@ impl PreferenceManager {
         self.set_list_hidden_columns(hidden);
     }
 
-    pub fn swap_list_columns(&self, col1: ListColumnId, col2: ListColumnId) {
+    pub fn move_list_column(&self, column: ListColumnId, target: ListColumnId, after: bool) {
         let mut order = self.list_column_order();
-        let pos1 = order.iter().position(|col| *col == col1);
-        let pos2 = order.iter().position(|col| *col == col2);
-        if let (Some(p1), Some(p2)) = (pos1, pos2) {
-            order.swap(p1, p2);
+        let Some(from) = order.iter().position(|item| *item == column) else {
+            return;
+        };
+        let Some(target) = order.iter().position(|item| *item == target) else {
+            return;
+        };
+        let mut to = target + usize::from(after);
+        if from < to {
+            to -= 1;
+        }
+        if from != to {
+            let column = order.remove(from);
+            order.insert(to, column);
             self.set_list_column_order(order);
         }
     }

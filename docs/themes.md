@@ -134,17 +134,17 @@ On Omarchy Quattro, Strata detects the active theme from:
 ~/.local/state/omarchy/current/theme/colors.toml
 ```
 
-The application maps Quattro's `background`, `foreground`, `accent`, `selection`, and `color8` values into its semantic tokens and monitors the current-theme state for changes, including edits to `colors.toml`. It defaults to following Omarchy on first launch.
+The application maps Quattro's `background`, `dark_background`, `lighter_background`, `foreground`, `accent`, `selection`, and `muted` values into its semantic tokens: the window uses `background` unchanged, panes and headers use `dark_background`, hover surfaces use `lighter_background`, and borders use `muted`. Missing optional values are derived from `background` and `foreground`; ANSI `color8` is not used, because its meaning varies between themes. Strata monitors the current-theme state for changes, including edits to `colors.toml`. It defaults to following Omarchy on first launch.
 
 Under **Settings → Appearance → Follow Omarchy**, **Omarchy variant** offers:
 
-- **Original** (default): the existing palette mapping, unchanged.
-- **Darker**: dark surfaces based on the terminal background instead of the brighter ANSI gray, with readable text and accents. Light palettes also become dark interpretations.
-- **High contrast**: stronger text and boundary contrast, retaining a light palette's light appearance or a dark palette's dark appearance.
+- **Lighter**: the mapping above. File columns use `background`; the sidebar, headers, and preview use `dark_background`.
+- **Darker** (default): file columns move onto `dark_background`, so the whole window, including the sidebar, headers, and preview, uses the darker color.
+- **Contrast**: the Darker layout with foregrounds raised to contrast targets, retaining a light palette's light appearance or a dark palette's dark appearance (`mode`, or the background's brightness when `mode` is absent).
 
-The variants keep palette hues and adjust brightness where necessary; they do not invert colors or substitute another theme. Darker and High contrast derive muted/hover surfaces from the same palette, adjust semantic foregrounds for at least 4.5:1 contrast against those surfaces, and adapt preview syntax colors. High contrast targets 7:1 for primary text and 3:1 for borders. These are semantic-token targets, not a guarantee for every composited or disabled widget state.
+Lighter and Darker use the theme's colors as authored; Darker only changes which surface each area uses. Contrast keeps the theme's surfaces and selection and raises text to 7:1, dim text, accents, and errors to 4.5:1, and borders to 3:1 against the window, pane, hover, and selection surfaces, adapting preview syntax colors to 4.5:1. A mid-tone surface is darkened or lightened only when no foreground could reach the text target on it. These are semantic-token targets, not a guarantee for every composited or disabled widget state.
 
-The choice is saved as `omarchy_variant = "original"`, `"darker"`, or `"high_contrast"` in Strata's `settings.toml`. It applies before Settings opens and live across windows, menus, dialogs, icons, and previews. Changing the active Omarchy theme retains the variant. Turning off Follow Omarchy disables the selector but remembers its value; bundled and custom themes are unaffected.
+The choice is remembered separately for each Omarchy theme, saved under `[omarchy_variants]` in Strata's `settings.toml` keyed by theme name (for example `tokyo-night = "lighter"`). It applies before Settings opens and live across windows, menus, dialogs, icons, and previews. Switching Omarchy themes restores the variant last chosen for that theme, or Darker for a theme without one. Turning off Follow Omarchy disables the selector but remembers its value; bundled and custom themes are unaffected.
 
 Syntax colors follow Quattro's named `magenta`, `green`, `orange`, `cyan`, and `yellow` colors. Older terminal palettes can supply `color5` for keywords, `color2` for strings, `color9` for constants, and `color3` for types. Missing colors retain the existing source-palette or derived fallback. Quattro values load in the same canonical hex form as custom theme files; values GTK cannot parse count as missing.
 

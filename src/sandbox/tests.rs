@@ -21,8 +21,8 @@ const PDF_PREVIEW: super::ParseOperation = super::ParseOperation::PreviewPdf(Pdf
 });
 
 use super::{
-    Cancellation, MAX_RASTER_INPUT_BYTES, MediaPreviewBackend, OutputError, ParseOperation,
-    PdfRenderSize, PrivateOutput, archive_output_error, gpu_devices, parse,
+    Cancellation, DocumentFormat, MAX_RASTER_INPUT_BYTES, MediaPreviewBackend, OutputError,
+    ParseOperation, PdfRenderSize, PrivateOutput, archive_output_error, gpu_devices, parse,
     polaris_gpu_available_at, resolve_renderer_executable, sandbox_command, sandbox_input_path,
     spawn_renderer, stage_secret_anon, valid_output, wait_for_renderer,
 };
@@ -265,33 +265,46 @@ fn workbook_parser_uses_resource_limited_sandbox_and_validated_output() {
 
 #[test]
 fn word_document_parser_uses_resource_limited_sandbox_and_validated_output() {
-    let command = sandbox_command(
-        Path::new("/usr/bin/bwrap"),
-        Path::new("/app/strata"),
-        Path::new("/fixtures/report.docx"),
-        Path::new("/private-output"),
-        ParseOperation::PreviewDocument,
-        0,
-        MediaPreviewBackend::Software,
-        &[],
-    );
-    let arguments = command
-        .get_args()
-        .map(|arg| arg.to_string_lossy())
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(arguments.contains("--unshare-all --die-with-parent --new-session --clearenv"));
-    assert!(arguments.contains("--as=2147483648 --cpu=10"));
-    assert!(arguments.contains("preview-document /input.docx /output/result.json"));
-    assert!(!arguments.contains("--share-net"));
-    assert!(valid_output(
-        ParseOperation::PreviewDocument,
-        br#"{"html":"<p>a</p>","truncated":false}"#
-    ));
-    assert!(!valid_output(
-        ParseOperation::PreviewDocument,
-        br#"{"rows":[["a"]],"truncated":false}"#
-    ));
+    for (input, format, expected) in [
+        (
+            "/fixtures/report.docx",
+            DocumentFormat::Docx,
+            "preview-document /input.docx /output/result.json docx",
+        ),
+        (
+            "/fixtures/report.ott",
+            DocumentFormat::Odt,
+            "preview-document /input.ott /output/result.json odt",
+        ),
+    ] {
+        let command = sandbox_command(
+            Path::new("/usr/bin/bwrap"),
+            Path::new("/app/strata"),
+            Path::new(input),
+            Path::new("/private-output"),
+            ParseOperation::PreviewDocument(format),
+            0,
+            MediaPreviewBackend::Software,
+            &[],
+        );
+        let arguments = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(arguments.contains("--unshare-all --die-with-parent --new-session --clearenv"));
+        assert!(arguments.contains("--as=2147483648 --cpu=10"));
+        assert!(arguments.contains(expected), "{arguments}");
+        assert!(!arguments.contains("--share-net"));
+        assert!(valid_output(
+            ParseOperation::PreviewDocument(format),
+            br#"{"html":"<p>a</p>","truncated":false}"#
+        ));
+        assert!(!valid_output(
+            ParseOperation::PreviewDocument(format),
+            br#"{"rows":[["a"]],"truncated":false}"#
+        ));
+    }
 }
 
 #[test]

@@ -28,11 +28,27 @@ use strip::TabStrip;
 #[cfg(test)]
 mod tests;
 
+struct ClosedTab {
+    location: Location,
+    index: usize,
+}
+
 struct Tab {
     id: u64,
     content: Rc<WindowContent>,
     focus: RefCell<Option<glib::WeakRef<gtk::Widget>>>,
     checking: RefCell<Option<Location>>,
+    folder: RefCell<Option<String>>,
+}
+
+impl Tab {
+    fn location(&self) -> Option<Location> {
+        self.content
+            .browser
+            .browser()
+            .active_location()
+            .or_else(|| self.checking.borrow().clone())
+    }
 }
 
 pub(in crate::ui::window) struct TabWindow {
@@ -42,6 +58,7 @@ pub(in crate::ui::window) struct TabWindow {
     drag_token: String,
     strip: TabStrip,
     tabs: RefCell<Vec<Rc<Tab>>>,
+    closed_tabs: RefCell<Vec<ClosedTab>>,
     active: Cell<u64>,
     next_id: Cell<u64>,
     hints: Cell<bool>,
@@ -76,6 +93,7 @@ impl TabWindow {
             stack,
             strip,
             tabs: RefCell::new(Vec::new()),
+            closed_tabs: RefCell::new(Vec::new()),
             active: Cell::new(0),
             next_id: Cell::new(1),
             hints: Cell::new(false),
@@ -132,6 +150,7 @@ impl TabWindow {
                 "toggle-arrow-scope",
                 "new-tab",
                 "close-tab",
+                "reopen-tab",
                 "previous-tab",
                 "select-tab",
                 "open-tab-at",
@@ -211,6 +230,21 @@ impl TabWindow {
         }
     }
 
+    fn reopen_closed_tab(self: &Rc<Self>) {
+        if self.blocked() {
+            return;
+        }
+        let closed = self.closed_tabs.borrow_mut().pop();
+        let Some(closed) = closed else {
+            return;
+        };
+        self.open_in_new_tab(closed.location);
+        let target = self.tabs.borrow().get(closed.index).map(|tab| tab.id);
+        if let Some(target) = target {
+            self.reorder(self.active.get(), target);
+        }
+    }
+
     fn open_in_new_tab(self: &Rc<Self>, location: Location) {
         if self.blocked() || self.window.upgrade().is_none() {
             return;
@@ -242,6 +276,7 @@ impl TabWindow {
             content: content.clone(),
             focus: RefCell::new(None),
             checking: RefCell::new(None),
+            folder: RefCell::new(None),
         });
         self.stack
             .add_named(&content.overlay, Some(&id.to_string()));
@@ -256,7 +291,9 @@ impl TabWindow {
         let weak = Rc::downgrade(self);
         content.browser.observe_tab_location(move |location| {
             if let Some(state) = weak.upgrade() {
-                state.strip.label(id, &tab_label(location));
+                let label = tab_label(location);
+                state.strip.label(id, &label);
+                state.set_folder(id, location.map(|_| label));
                 state.persist_session();
             }
         });
@@ -296,6 +333,7 @@ impl TabWindow {
         tab.content.activate_actions(&window);
         self.refresh_chrome();
         self.strip.select(id);
+        self.refresh_title();
         let saved = tab
             .focus
             .borrow()
@@ -334,6 +372,13 @@ impl TabWindow {
             window.close();
             return;
         }
+        if let Some(location) = tabs[index].location() {
+            let mut closed = self.closed_tabs.borrow_mut();
+            if closed.len() == 20 {
+                closed.remove(0);
+            }
+            closed.push(ClosedTab { location, index });
+        }
         drop(tabs);
         self.discard(id);
     }
@@ -360,6 +405,33 @@ impl TabWindow {
         self.strip.remove(id);
         self.refresh_chrome();
         self.persist_session();
+    }
+
+    fn set_folder(&self, id: u64, folder: Option<String>) {
+        let Some(tab) = self.tabs.borrow().iter().find(|tab| tab.id == id).cloned() else {
+            return;
+        };
+        tab.folder.replace(folder);
+        if id == self.active.get() {
+            self.refresh_title();
+        }
+    }
+
+    fn refresh_title(&self) {
+        let Some(window) = self.window.upgrade() else {
+            return;
+        };
+        let title = self
+            .tabs
+            .borrow()
+            .iter()
+            .find(|tab| tab.id == self.active.get())
+            .and_then(|tab| tab.folder.borrow().clone())
+            .map_or_else(
+                || "Strata".to_owned(),
+                |folder| format!("{folder} — Strata"),
+            );
+        window.set_title(Some(&title));
     }
 
     fn refresh_chrome(&self) {
@@ -419,6 +491,15 @@ impl TabWindow {
             }
         });
         window.add_action(&close);
+
+        let reopen = gio::SimpleAction::new("reopen-tab", None);
+        let weak = Rc::downgrade(self);
+        reopen.connect_activate(move |_, _| {
+            if let Some(state) = weak.upgrade() {
+                state.reopen_closed_tab();
+            }
+        });
+        window.add_action(&reopen);
 
         let previous = gio::SimpleAction::new("previous-tab", None);
         let weak = Rc::downgrade(self);
@@ -526,8 +607,7 @@ impl TabWindow {
         let mut locations = Vec::with_capacity(tabs.len());
         let mut active = 0;
         for tab in tabs.iter() {
-            let location = tab.content.browser.browser().active_location();
-            let Some(location) = location.or_else(|| tab.checking.borrow().clone()) else {
+            let Some(location) = tab.location() else {
                 continue;
             };
             if tab.id == self.active.get() {
@@ -612,6 +692,8 @@ impl TabWindow {
             self.new_tab();
         } else if press.is(TAB_CLOSE) {
             self.close(self.active.get());
+        } else if press.is(TAB_REOPEN) {
+            self.reopen_closed_tab();
         } else if press.is_any(&[TAB_NEXT, TAB_NEXT_PAGE_DOWN]) {
             self.cycle(1);
         } else if press.is_any(&[TAB_PREVIOUS, TAB_PREVIOUS_PAGE_UP]) {
@@ -659,6 +741,7 @@ pub(in crate::ui::window) fn is_tab_shortcut(press: &KeyPress) -> bool {
     press.is_any(&[
         TAB_NEW,
         TAB_CLOSE,
+        TAB_REOPEN,
         TAB_NEXT,
         TAB_PREVIOUS,
         TAB_NEXT_PAGE_DOWN,
@@ -689,7 +772,7 @@ pub(in crate::ui::window) fn tab_index(digit: u8) -> usize {
 
 fn tab_label(location: Option<&Location>) -> String {
     let Some(location) = location else {
-        return "Home".into();
+        return crate::i18n::tr("Home");
     };
     if let Some(path) = location.native_path() {
         if Some(path)
@@ -705,11 +788,11 @@ fn tab_label(location: Option<&Location>) -> String {
     }
     let uri = location.uri_value().unwrap_or_default();
     match uri {
-        "trash:///" => "Trash".into(),
-        "recent:///" => "Recent".into(),
-        "network:///" => "Network".into(),
+        "trash:///" => crate::i18n::tr("Trash"),
+        "recent:///" => crate::i18n::tr("Recent"),
+        "network:///" => crate::i18n::tr("Network"),
         _ => gio::File::for_uri(uri).basename().map_or_else(
-            || "Location".into(),
+            || crate::i18n::tr("Location"),
             |name| name.to_string_lossy().into_owned(),
         ),
     }

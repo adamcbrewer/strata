@@ -662,6 +662,7 @@
   "Rename the focused item in the footer": "Переименовать элемент в фокусе в нижней панели",
   "Rendering page %{completed} of %{total}": "Отрисовка страницы %{completed} из %{total}",
   "Rendering pages for the print dialog": "Отрисовка страниц для диалога печати",
+  "Reopen the last closed tab": "Открыть последнюю закрытую вкладку",
   "Repeat the last find / in reverse": "Повторить последний поиск / в обратном направлении",
   "Replace": "Заменить",
   "Replace existing file?": "Заменить существующий файл?",

@@ -9,7 +9,8 @@ pub(in crate::ui) fn non_default_preferences() -> Preferences {
     Preferences {
         mode: "theme".into(),
         theme: "nord".into(),
-        omarchy_variant: OmarchyVariant::Darker,
+        legacy_omarchy_variant: None,
+        omarchy_variants: HashMap::from([("fixture".into(), OmarchyVariant::Lighter)]),
         folder_peeking: true,
         single_click_previews: false,
         columns_mirror_selection: false,
@@ -86,6 +87,7 @@ pub(in crate::ui) fn non_default_preferences() -> Preferences {
         watch_network_folders: false,
         thumbnail_workers: 6,
         show_thumbnails: false,
+        stl_thumbnails: true,
         icons_thumbnail_size: 128,
         chooser_column_width: Some(420),
         browser_column_width: Some(380),
@@ -150,7 +152,7 @@ pub(in crate::ui) fn seed_saved_preferences_for_test() {
 
 pub(in crate::ui) fn seed_omarchy_for_test() {
     seed_omarchy_colors_for_test(
-        "background = '#112233'\nforeground = '#ddeeff'\naccent = '#445566'\n",
+        "background = '#112233'\ndark_background = '#0a1520'\nforeground = '#ddeeff'\naccent = '#445566'\n",
     );
 }
 

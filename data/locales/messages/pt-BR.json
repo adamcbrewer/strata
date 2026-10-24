@@ -662,6 +662,7 @@
   "Rename the focused item in the footer": "Renomear o item em foco no rodapé",
   "Rendering page %{completed} of %{total}": "Renderizando página %{completed} de %{total}",
   "Rendering pages for the print dialog": "Renderizando páginas para a janela de impressão",
+  "Reopen the last closed tab": "Reabrir a última aba fechada",
   "Repeat the last find / in reverse": "Repetir a última busca / no sentido inverso",
   "Replace": "Substituir",
   "Replace existing file?": "Substituir o arquivo existente?",

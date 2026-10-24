@@ -662,6 +662,7 @@
   "Rename the focused item in the footer": "在底栏中重命名当前项目",
   "Rendering page %{completed} of %{total}": "正在渲染第 %{completed} 页，共 %{total} 页",
   "Rendering pages for the print dialog": "正在为打印对话框渲染页面",
+  "Reopen the last closed tab": "重新打开上次关闭的标签页",
   "Repeat the last find / in reverse": "重复上次查找 / 反向重复",
   "Replace": "替换",
   "Replace existing file?": "要替换现有文件吗？",

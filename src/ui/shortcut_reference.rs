@@ -928,6 +928,7 @@ const DEFAULT_TOOLS: &[Shortcut] = &[
     row(One(LOCATION), "Edit the location"),
     row(One(TAB_NEW), "New tab"),
     row(One(TAB_CLOSE), "Close the active tab"),
+    row(One(TAB_REOPEN), "Reopen the last closed tab"),
     row(Any(&[TAB_NEXT, TAB_PREVIOUS]), "Next / previous tab"),
     row(
         Any(&[TAB_PREVIOUS_PAGE_UP, TAB_NEXT_PAGE_DOWN]),
@@ -1057,6 +1058,7 @@ fn tenxer_tools(mode: BrowserMode, chooser: bool) -> Vec<Shortcut> {
             row(Keys::Digits(TAB_CHORD_NUMBERS), "Select tab 1–9 / 10"),
             row(One(TAB_NEW), "New tab"),
             row(One(TAB_CLOSE), "Close the active tab"),
+            row(One(TAB_REOPEN), "Reopen the last closed tab"),
             row(Any(&[TAB_NEXT, TAB_PREVIOUS]), "Next / previous tab"),
             row(
                 Any(&[TAB_PREVIOUS_PAGE_UP, TAB_NEXT_PAGE_DOWN]),

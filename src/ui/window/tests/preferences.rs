@@ -1785,89 +1785,113 @@ fn watching_network_folders_applies_before_settings_and_follows_changes_across_w
 
 #[test]
 fn show_thumbnails_saved_and_live_preferences_apply_across_windows_and_views() {
-    gtk_test(
-        "ui::window::tests::preferences::show_thumbnails_saved_and_live_preferences_apply_across_windows_and_views",
-        || {
-            use crate::ui::thumbnail::{
-                ThumbnailSlot, cached_thumbnail, remember_thumbnail_for_test,
-            };
+    thumbnail_preferences_across_windows("photo.png", false);
+}
 
-            write_settings("show_thumbnails = false\nbrowser_mode = 'list'\n");
-            let directory = tempfile::tempdir().expect("image folder");
-            let path = directory.path().join("photo.png");
-            let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
-                1,
-                1,
-                gtk::gdk::MemoryFormat::R8g8b8a8,
-                &gtk::glib::Bytes::from_owned(vec![120, 80, 40, 255]),
-                4,
-            )
-            .upcast();
-            texture.save_to_png(&path).expect("image fixture");
-            let manager = PreferenceManager::shared();
-            let windows = [OpenWindow::open(), OpenWindow::open()];
-            for open in &windows {
-                open.content
-                    .browser
-                    .navigate_location(crate::model::Location::local(directory.path()));
-                let entry = loaded_entry(open, &path);
-                remember_thumbnail_for_test(&entry, texture.clone());
-                assert_eq!(
-                    cached_thumbnail(&entry),
-                    Some(texture.clone()),
-                    "preview cache remains usable"
-                );
-            }
-            let slots = || {
+#[test]
+fn stl_thumbnails_saved_and_live_preferences_apply_across_windows_and_views() {
+    thumbnail_preferences_across_windows("model.stl", true);
+}
+
+fn thumbnail_preferences_across_windows(name: &str, model: bool) {
+    let test = if model {
+        "ui::window::tests::preferences::stl_thumbnails_saved_and_live_preferences_apply_across_windows_and_views"
+    } else {
+        "ui::window::tests::preferences::show_thumbnails_saved_and_live_preferences_apply_across_windows_and_views"
+    };
+    gtk_test(test, || {
+        use crate::ui::thumbnail::{ThumbnailSlot, cached_thumbnail, remember_thumbnail_for_test};
+
+        write_settings("show_thumbnails = false\nstl_thumbnails = true\nbrowser_mode = 'list'\n");
+        let directory = tempfile::tempdir().expect("image folder");
+        let path = directory.path().join(name);
+        let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
+            1,
+            1,
+            gtk::gdk::MemoryFormat::R8g8b8a8,
+            &gtk::glib::Bytes::from_owned(vec![120, 80, 40, 255]),
+            4,
+        )
+        .upcast();
+        texture.save_to_png(&path).expect("cached artwork fixture");
+        let mtime = std::fs::metadata(&path)
+            .expect("fixture metadata")
+            .modified()
+            .expect("mtime")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix time")
+            .as_secs() as i64;
+        let source = path.clone();
+        let png = std::fs::read(&path).expect("PNG");
+        std::thread::spawn(move || crate::ui::thumbnail_cache::store(&source, mtime, &png))
+            .join()
+            .expect("seed thumbnail cache off the UI thread");
+        let manager = PreferenceManager::shared();
+        let windows = [OpenWindow::open(), OpenWindow::open()];
+        for open in &windows {
+            open.content
+                .browser
+                .navigate_location(crate::model::Location::local(directory.path()));
+            let entry = loaded_entry(open, &path);
+            remember_thumbnail_for_test(&entry, texture.clone());
+            assert_eq!(
+                cached_thumbnail(&entry),
+                Some(texture.clone()),
+                "preview cache remains usable"
+            );
+        }
+        let slots = || {
+            windows
+                .iter()
+                .map(|open| {
+                    let mut found = Vec::new();
+                    walk(&open.content.browser.widget(), &mut |widget| {
+                        if widget.is_mapped()
+                            && let Some(slot) = widget.downcast_ref::<ThumbnailSlot>()
+                            && slot.provider_path().as_deref() == path.to_str()
+                        {
+                            found.push(slot.clone());
+                        }
+                    });
+                    found
+                })
+                .collect::<Vec<_>>()
+        };
+        let shown = |enabled| {
+            slots().iter().all(|window_slots| {
+                !window_slots.is_empty()
+                    && window_slots
+                        .iter()
+                        .all(|slot| slot.texture().is_some() == enabled)
+            })
+        };
+        wait_until(|| shown(false));
+        for mode in [BrowserMode::List, BrowserMode::Columns, BrowserMode::Icons] {
+            manager.set_browser_mode(mode);
+            wait_until(|| {
                 windows
                     .iter()
-                    .map(|open| {
-                        let mut found = Vec::new();
-                        walk(&open.content.browser.widget(), &mut |widget| {
-                            if widget.is_mapped()
-                                && let Some(slot) = widget.downcast_ref::<ThumbnailSlot>()
-                                && slot.provider_path().as_deref() == path.to_str()
-                            {
-                                found.push(slot.clone());
-                            }
-                        });
-                        found
-                    })
-                    .collect::<Vec<_>>()
-            };
-            let shown = |enabled| {
-                slots().iter().all(|window_slots| {
-                    !window_slots.is_empty()
-                        && window_slots
-                            .iter()
-                            .all(|slot| slot.texture().is_some() == enabled)
-                })
-            };
+                    .all(|open| open.content.browser.view_mode() == mode)
+            });
             wait_until(|| shown(false));
-            for mode in [BrowserMode::List, BrowserMode::Columns, BrowserMode::Icons] {
-                manager.set_browser_mode(mode);
-                wait_until(|| {
-                    windows
-                        .iter()
-                        .all(|open| open.content.browser.view_mode() == mode)
-                });
-                wait_until(|| shown(false));
-                manager.set_show_thumbnails(true);
-                wait_until(|| shown(true));
-                manager.set_show_thumbnails(false);
-                wait_until(|| shown(false));
-            }
-            crate::storage::writer::settle();
-            assert!(
-                std::fs::read_to_string(settings_file())
-                    .expect("saved settings")
-                    .contains("show_thumbnails = false")
-            );
-            for open in windows {
-                open.window.close();
-            }
-        },
-    );
+            manager.set_show_thumbnails(true);
+            wait_until(|| shown(true));
+            manager.set_stl_thumbnails(false);
+            wait_until(|| shown(!model));
+            manager.set_stl_thumbnails(true);
+            wait_until(|| shown(true));
+            manager.set_show_thumbnails(false);
+            wait_until(|| shown(false));
+        }
+        manager.set_stl_thumbnails(false);
+        crate::storage::writer::settle();
+        let saved = std::fs::read_to_string(settings_file()).expect("saved settings");
+        assert!(saved.contains("show_thumbnails = false"));
+        assert!(saved.contains("stl_thumbnails = false"));
+        for open in windows {
+            open.window.close();
+        }
+    });
 }
 
 struct OpenWindow {

@@ -356,7 +356,7 @@ fn shade(
     width: u32,
     height: u32,
     accent: [u8; 3],
-    surface: [u8; 3],
+    surface: [u8; 4],
     view: ModelView,
     progress: &dyn Fn(ModelPreviewStage),
 ) -> Result<Vec<u8>, String> {
@@ -401,7 +401,9 @@ fn shade(
         })
     };
     let mut pixmap = Pixmap::new(width, height).ok_or("Cannot allocate model preview")?;
-    pixmap.fill(Color::from_rgba8(surface[0], surface[1], surface[2], 255));
+    pixmap.fill(Color::from_rgba8(
+        surface[0], surface[1], surface[2], surface[3],
+    ));
     let mut depths = vec![f32::NEG_INFINITY; (width * height) as usize];
     let mut work = 0u64;
     for face in faces {
@@ -575,7 +577,7 @@ fn render_3mf(
     width: u32,
     height: u32,
     accent: [u8; 3],
-    surface: [u8; 3],
+    surface: [u8; 4],
     view: ModelView,
     progress: &dyn Fn(ModelPreviewStage),
 ) -> Result<RenderedModel, String> {
@@ -633,7 +635,12 @@ fn render_model(
         .map_err(|_| "Invalid model size")?
         .clamp(16, 800);
     let accent = rgb(accent)?;
-    let surface = rgb(surface)?;
+    let surface = if *surface == "transparent" {
+        [0, 0, 0, 0]
+    } else {
+        let [r, g, b] = rgb(surface)?;
+        [r, g, b, 255]
+    };
     match format {
         ModelFormat::FreeCad => Ok(RenderedModel {
             png: thumbnail(input, format, width, height, progress)?,

@@ -132,6 +132,39 @@ impl CoverFormat {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DocumentFormat {
+    Docx,
+    Odt,
+}
+
+impl DocumentFormat {
+    pub(crate) fn for_file(content_type: &str, name: &std::ffi::OsStr) -> Option<Self> {
+        if crate::services::docx::is_document(content_type, name) {
+            Some(Self::Docx)
+        } else if crate::services::odt::is_document(content_type, name) {
+            Some(Self::Odt)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn argument(self) -> &'static str {
+        match self {
+            Self::Docx => "docx",
+            Self::Odt => "odt",
+        }
+    }
+
+    pub(crate) fn from_argument(value: &str) -> Option<Self> {
+        match value {
+            "docx" => Some(Self::Docx),
+            "odt" => Some(Self::Odt),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ParseOperation {
     ThumbnailImage,
@@ -154,7 +187,7 @@ pub(crate) enum ParseOperation {
     MediaMetadata,
     RawMetadata,
     PreviewWorkbook,
-    PreviewDocument,
+    PreviewDocument(DocumentFormat),
     PreviewPdf(PdfRenderSize),
     PreviewModel(ModelRender),
     PreviewRoute(crate::services::route_preview::RouteRender),
@@ -194,7 +227,7 @@ impl ParseOperation {
             Self::MediaMetadata => "media-metadata",
             Self::RawMetadata => "raw-metadata",
             Self::PreviewWorkbook => "preview-workbook",
-            Self::PreviewDocument => "preview-document",
+            Self::PreviewDocument(_) => "preview-document",
             Self::PreviewPdf(_) => "preview-pdf",
             Self::PreviewModel(_) => "preview-model",
             Self::PreviewRoute(_) => "preview-route",
@@ -239,7 +272,7 @@ impl ParseOperation {
                 | Self::AudioTags
                 | Self::RawMetadata
                 | Self::PreviewWorkbook
-                | Self::PreviewDocument
+                | Self::PreviewDocument(_)
                 | Self::PreviewRoute(_)
                 | Self::InspectImage
         ) {
@@ -288,7 +321,7 @@ impl ParseOperation {
             | Self::MediaMetadata
             | Self::RawMetadata
             | Self::PreviewWorkbook
-            | Self::PreviewDocument
+            | Self::PreviewDocument(_)
             | Self::ArchiveList { .. } => None,
         }
     }
@@ -311,7 +344,12 @@ impl ParseOperation {
             }
             Self::PreviewRoute(_) => Some(crate::services::route_preview::MAX_ROUTE_INPUT_BYTES),
             Self::PreviewWorkbook => Some(crate::services::table::WORKBOOK_BYTE_LIMIT),
-            Self::PreviewDocument => Some(crate::services::docx::DOCX_BYTE_LIMIT),
+            Self::PreviewDocument(DocumentFormat::Docx) => {
+                Some(crate::services::docx::DOCX_BYTE_LIMIT)
+            }
+            Self::PreviewDocument(DocumentFormat::Odt) => {
+                Some(crate::services::odt::ODT_BYTE_LIMIT)
+            }
             Self::DocumentImage => Some(crate::services::document_media::IMAGE_INPUT_LIMIT),
             Self::DocumentMermaid => {
                 Some(crate::services::document_media::DIAGRAM_INPUT_LIMIT as u64)
@@ -429,7 +467,10 @@ fn parse_sandboxed(
         .canonicalize()
         .map_err(|error| crate::services::io_error_message(&error))?;
     let stop = cancellation.clone();
-    let hold = crate::services::file_activity::hold([input, &canonical], move || stop.cancel())?;
+    let hold = Arc::new(crate::services::file_activity::hold(
+        [input, &canonical],
+        move || stop.cancel(),
+    )?);
     hold.settle(parse_canonical(
         &canonical,
         operation,
@@ -437,6 +478,7 @@ fn parse_sandboxed(
         media_backend,
         cancellation,
         progress,
+        Arc::clone(&hold),
     ))
 }
 
@@ -447,6 +489,7 @@ fn parse_canonical(
     media_backend: MediaPreviewBackend,
     cancellation: &Cancellation,
     progress: &dyn Fn(crate::services::ModelPreviewStage),
+    hold: Arc<crate::services::file_activity::Hold>,
 ) -> Result<ParseOutput, String> {
     let input_metadata =
         fs::metadata(input).map_err(|error| crate::services::io_error_message(&error))?;
@@ -486,8 +529,9 @@ fn parse_canonical(
         });
     }
 
-    let output =
-        PrivateOutput::create().map_err(|error| crate::services::io_error_message(&error))?;
+    let output = Arc::new(
+        PrivateOutput::create().map_err(|error| crate::services::io_error_message(&error))?,
+    );
     let secret = if let ParseOperation::ArchiveList {
         password: Some(password),
         ..
@@ -546,8 +590,20 @@ fn parse_canonical(
             progress(stage);
         }
     };
-    let status =
-        wait_for_renderer_reporting(&mut child, cancellation, timeout, &mut poll_progress)?;
+    let status = if matches!(&operation, ParseOperation::PreviewModel(render)
+        if render.purpose == crate::services::ModelRenderPurpose::Thumbnail)
+    {
+        model::wait_for_thumbnail(
+            child,
+            cancellation,
+            timeout,
+            &mut poll_progress,
+            Arc::clone(&output),
+            hold,
+        )?
+    } else {
+        wait_for_renderer_reporting(&mut child, cancellation, timeout, &mut poll_progress)?
+    };
     if !status.success() {
         if matches!(
             operation,
@@ -815,16 +871,27 @@ fn wait_for_renderer_reporting(
     wall_time_limit: Duration,
     progress: &mut dyn FnMut(),
 ) -> Result<ExitStatus, String> {
+    let result = monitor_renderer(child, cancellation, wall_time_limit, progress);
+    if result.is_err() {
+        terminate(child);
+    }
+    result
+}
+
+fn monitor_renderer(
+    child: &mut Renderer,
+    cancellation: &Cancellation,
+    wall_time_limit: Duration,
+    progress: &mut dyn FnMut(),
+) -> Result<ExitStatus, String> {
     let started = Instant::now();
     let deadline = started + wall_time_limit;
     let pidfd = child_pidfd(&child.child);
     loop {
         if cancellation.is_cancelled() {
-            terminate(child);
             return Err("Preview cancelled".to_owned());
         }
         if Instant::now() >= deadline {
-            terminate(child);
             return Err("The preview renderer timed out".to_owned());
         }
         progress();
@@ -832,7 +899,6 @@ fn wait_for_renderer_reporting(
             Ok(Some(status)) => return Ok(status),
             Ok(None) => wait_step(pidfd.as_ref(), deadline),
             Err(error) => {
-                terminate(child);
                 return Err(format!("Unable to monitor the preview renderer: {error}"));
             }
         }
@@ -1018,12 +1084,16 @@ fn sandbox_command(
                 format!("{value}:{}x{}", size.width, size.height)
             }
             ParseOperation::PreviewModel(render) => format!(
-                "{}:{}x{}:{:06x}:{:06x}:{}",
+                "{}:{}x{}:{:06x}:{}:{}",
                 render.format.argument(),
                 render.size.width,
                 render.size.height,
                 render.palette.accent,
-                render.palette.surface,
+                match render.purpose {
+                    crate::services::ModelRenderPurpose::Preview =>
+                        format!("{:06x}", render.palette.surface),
+                    crate::services::ModelRenderPurpose::Thumbnail => "transparent".to_owned(),
+                },
                 render.view.argument(),
             ),
             ParseOperation::PreviewRoute(render) => format!(
@@ -1035,6 +1105,7 @@ fn sandbox_command(
             ParseOperation::ThumbnailModel(format) => format.argument().to_owned(),
             ParseOperation::ThumbnailCover(format) => format.argument().to_owned(),
             ParseOperation::PreviewCover(format) => format.argument().to_owned(),
+            ParseOperation::PreviewDocument(format) => format.argument().to_owned(),
             ParseOperation::ArchiveList { format, .. } => format.extension().to_owned(),
             _ => value.to_string(),
         };
@@ -1136,7 +1207,7 @@ fn valid_output(operation: ParseOperation, data: &[u8]) -> bool {
     if matches!(operation, ParseOperation::PreviewWorkbook) {
         return crate::services::table::TableData::from_json(data).is_ok();
     }
-    if matches!(operation, ParseOperation::PreviewDocument) {
+    if matches!(operation, ParseOperation::PreviewDocument(_)) {
         return crate::services::docx::RichTextData::from_json(data).is_ok();
     }
     if matches!(operation, ParseOperation::RawMetadata) {
@@ -1179,7 +1250,7 @@ pub(crate) fn png_dimensions(data: &[u8]) -> Option<(u32, u32)> {
     (width > 0 && height > 0).then_some((width, height))
 }
 
-fn terminate(renderer: &mut Renderer) {
+fn kill_renderer(renderer: &mut Renderer) {
     if let Ok(raw_pid) = i32::try_from(renderer.id())
         && let Some(process_group) = Pid::from_raw(raw_pid)
     {
@@ -1188,6 +1259,10 @@ fn terminate(renderer: &mut Renderer) {
     // bwrap is also the PID-namespace init process, so descendants that create a new
     // process group still die with it.
     let _killed = renderer.child.kill();
+}
+
+fn terminate(renderer: &mut Renderer) {
+    kill_renderer(renderer);
     let _waited = renderer.child.wait();
     renderer.await_namespace();
 }

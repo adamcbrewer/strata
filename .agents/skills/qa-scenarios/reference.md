@@ -235,7 +235,8 @@ run's scratch directory.
 | `"opened":["$fixture/todo.txt"]` | A stub launcher's record lists exactly as many paths and each of them. |
 | `"launches":{"count":3,"within":"$fixture"}`, `{"first_dir":...}` | A stub terminal launcher's `cwd<TAB>--dir=...` lines. |
 | `"can_trash":false` | GIO's `access::can-trash`. |
-| `"cached_in":"$cache/thumbnails/large"` + `exists`/`is`/`pixel`/`keep_mtime`/`mtime_of` | Checks the path's cached freedesktop thumbnail instead. |
+| `"alpha_range":[0,255]` | An image's lowest and highest alpha, so `[0,255]` holds both a transparent and an opaque pixel. |
+| `"cached_in":"$cache/thumbnails/large"` + `exists`/`is`/`pixel`/`alpha_range`/`keep_mtime`/`mtime_of` | Checks the path's cached freedesktop thumbnail instead. |
 | `"all_cached_in":"...","except_suffix":".stl"` | Every entry but those has a cached thumbnail. |
 | `"keep_mtime":"stored"` then `"mtime_of":"stored"` | Keeps the nanosecond mtime; waits until it is that again. |
 
@@ -288,7 +289,7 @@ lookup that breaks, such as an unrealized surface, is an error, never
 | `{"preview":true}` | The quick preview drawer. |
 | `{"search_result":"todo.txt"}`, `{"result":"beta/match-note.txt"}`, `{"result_row":-1,"containing":"match-note"}` | Search result rows by name, by path, or by index among those whose name contains a part (or is `"name"`). |
 | `{"window":true}`, `{"window":true,"y_of":TARGET}` | The main window; with `y_of`, a point near its right edge at that target's centre height. |
-| `{"toplevel":"Copy to"}`, `{"other_window":"Strata"}` | Another application window by title (a floating chooser; a second browser window). |
+| `{"toplevel":"Copy to"}`, `{"other_window":"Strata"}` | Another application window by title (a floating chooser; a second browser window). A title also matches windows titled `"<folder> — <title>"`, so `"Strata"` finds every browser window and `"docs — Strata"` only the one showing `docs`. |
 | `{"parent":TARGET}`, `{"ancestor":"scroll pane","of":TARGET}` | A widget's parent; its nearest ancestor with the role. |
 | `{"kept":"edge"}` | A box or point `settle`, `remember`, or `keep` kept. |
 | `{"point":[X,Y]}` | A point from target coordinates, in whole pixels: each is `{"of":TARGET,"at":OFFSET}` (its centre without `at`), `{"mid":[A,B]}`, `{"max":[A,B]}`, or `{"extent":TARGET}` (its width or height taken as a screen coordinate), each with optional `"plus":N`. |
@@ -361,7 +362,7 @@ pane name) where the check reads a pane.
 | `{"present":TARGET}`, `{"absent":TARGET}` | Found on screen, or not found or not on screen. |
 | `{"presented":TARGET}` | Found, even scrolled away. |
 | `{"on_screen":TARGET}` | Within the window's height. |
-| `{"state":{"target":T,"selected":true,"focused":false,"checked":false,"pressed":true,"sensitive":true}}` | Each given state matches; also `selectable`, `editable`, `focusable`, and `busy` (what `accessibility::set_busy` recorded). An active switch is `pressed` and `checked`; a tab's `selected` is what `accessibility::set_selected` recorded. |
+| `{"state":{"target":T,"selected":true,"focused":false,"checked":false,"pressed":true,"sensitive":true}}` | Each given state matches; also `selectable`, `editable`, `focusable`, `busy` (what `accessibility::set_busy` recorded), and `marked` (an entry row outlined as the result Enter in its filter field opens). An active switch is `pressed` and `checked`; a tab's `selected` is what `accessibility::set_selected` recorded. |
 | `{"name":{"target":T,"text":"0:05"}}`, `{"text":{"target":T,"text":"..."}}`, `{"description":{"target":T,"text":"Ctrl+C"}}` | Accessible name, text content (a label's or entry's text, a text view's buffer), or description (the recorded one, or a picture's alternative text), exactly or as a pattern (`{"contains":...}`). |
 | `{"mentions":{"target":T,"text":"..."}}` | Some name or description in the subtree contains the text; `"role":"label"` limits it; `"words":"a b"` allows any whitespace; `"equals"` matches a whole collapsed name. |
 | `{"subtree_text":{"target":T,"contains":"...","strip_newlines":true}}` | The subtree's joined text contains the part. |

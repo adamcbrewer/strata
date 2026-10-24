@@ -25,6 +25,16 @@ fn a_native_toggle_reports_its_own_state_over_a_recorded_one() {
             let switch = gtk::Switch::new();
             switch.set_active(true);
             assert!(targets::states(switch.upcast_ref()).checked);
+
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            row.append(&content);
+            assert!(!targets::states(row.upcast_ref()).marked);
+            content.add_css_class(crate::ui::ENTER_TARGET_CLASS);
+            assert!(
+                targets::states(row.upcast_ref()).marked,
+                "an entry row reports the Enter mark its content carries"
+            );
         },
     );
 }

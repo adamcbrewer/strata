@@ -441,6 +441,17 @@ pub(crate) fn fs_actions_write_archives_thumbnails_and_records() {
         .is_ok()
     );
     assert!(
+        step(
+            json!({ "fs": { "path": "todo.txt", "cached_in": cache, "alpha_range": [255, 255] } })
+        )
+        .is_ok()
+    );
+    assert!(
+        step(json!({ "fs": { "path": "todo.txt", "cached_in": cache, "alpha_range": [0, 255] } }))
+            .is_err(),
+        "a solid thumbnail has no transparent pixel"
+    );
+    assert!(
         step(json!({ "fs": { "path": ".", "all_cached_in": cache, "except_suffix": ".zip" } }))
             .is_err(),
         "the tarball has no thumbnail"

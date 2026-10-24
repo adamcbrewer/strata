@@ -16,6 +16,8 @@ pub(crate) struct States {
     pub(crate) editable: bool,
     pub(crate) focusable: bool,
     pub(crate) busy: bool,
+    /// Outlined as the result Enter in a filter field opens.
+    pub(crate) marked: bool,
 }
 
 pub(crate) fn states(widget: &gtk::Widget) -> States {
@@ -85,6 +87,10 @@ pub(crate) fn states(widget: &gtk::Widget) -> States {
             .as_ref()
             .and_then(|naming| naming.busy)
             .unwrap_or(false),
+        // An entry target is the list's row; the row's child carries the mark.
+        marked: std::iter::once(widget.clone())
+            .chain(widget.first_child())
+            .any(|widget| widget.has_css_class(crate::ui::ENTER_TARGET_CLASS)),
     }
 }
 

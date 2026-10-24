@@ -206,7 +206,7 @@ impl ThumbnailSlot {
         widget.set_slot(slot);
         crate::ui::preferences::PreferenceManager::shared().bind_preference(
             &widget,
-            crate::ui::preferences::PreferenceManager::show_thumbnails,
+            |manager| (manager.show_thumbnails(), manager.stl_thumbnails()),
             |widget, _| {
                 let slot = widget
                     .downcast_ref::<ThumbnailSlot>()

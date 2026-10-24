@@ -99,7 +99,7 @@ fn older_preferences_keep_backward_compatible_behavior_defaults() {
     saved.remove("date_format");
     saved.remove("send_to_recent_destinations");
     saved.remove("tenxer_mode");
-    saved.remove("omarchy_variant");
+    saved.remove("omarchy_variants");
     saved.remove("file_icon_colors");
     saved.remove("folder_peeking");
     saved.remove("columns_show_sizes");
@@ -116,7 +116,7 @@ fn older_preferences_keep_backward_compatible_behavior_defaults() {
             date_format: "relative".into(),
             send_to_recent_destinations: HashMap::new(),
             tenxer_mode: false,
-            omarchy_variant: OmarchyVariant::Original,
+            omarchy_variants: HashMap::new(),
             file_icon_colors: FileIconColors::Brand,
             folder_peeking: false,
             columns_show_sizes: true,
@@ -200,14 +200,17 @@ fn send_to_history_is_device_scoped_deduplicated_capped_and_persistent() {
 fn a_malformed_preference_does_not_discard_the_others() {
     let mut saved = toml::Table::try_from(non_default_preferences()).expect("saved preferences");
     saved.insert("show_hidden".into(), "yes".into());
-    saved.insert("omarchy_variant".into(), "unknown".into());
+    saved.insert(
+        "omarchy_variants".into(),
+        toml::Table::from_iter([("fixture".into(), "unknown".into())]).into(),
+    );
     assert!(saved.clone().try_into::<Preferences>().is_err());
 
     assert_eq!(
         salvage_preferences(saved),
         Preferences {
             show_hidden: false,
-            omarchy_variant: OmarchyVariant::Original,
+            omarchy_variants: HashMap::new(),
             ..non_default_preferences()
         }
     );
@@ -952,6 +955,7 @@ fn every_saved_preference_loads_before_any_settings_page_exists() {
             assert!(!manager.watch_network_folders());
             assert_eq!(manager.thumbnail_workers(), 6);
             assert!(!manager.show_thumbnails());
+            assert!(manager.stl_thumbnails());
             assert_eq!(
                 manager.list_column_order(),
                 vec![
@@ -997,6 +1001,44 @@ fn every_saved_preference_loads_before_any_settings_page_exists() {
 }
 
 #[test]
+fn legacy_omarchy_variant_migrates_to_the_active_theme() {
+    gtk_test(
+        "ui::preferences::tests::preferences::legacy_omarchy_variant_migrates_to_the_active_theme",
+        || {
+            seed_saved_preferences_for_test();
+            seed_omarchy_for_test();
+            let mut saved =
+                toml::Table::try_from(non_default_preferences()).expect("saved preferences");
+            saved.remove("omarchy_variants");
+            saved.insert("mode".into(), "omarchy".into());
+            saved.insert("omarchy_variant".into(), "high_contrast".into());
+            fs::write(
+                settings_path(),
+                toml::to_string(&saved).expect("legacy settings"),
+            )
+            .expect("persist legacy variant");
+            let themes = ThemeManager::shared();
+            let preferences = PreferenceManager::shared();
+            assert_eq!(preferences.omarchy_variant(), OmarchyVariant::Contrast);
+            let migrated = themes.appearance_tokens();
+            preferences.set_folder_peeking(false);
+            crate::storage::writer::settle();
+            let saved = fs::read_to_string(settings_path()).expect("migrated settings");
+            let saved: toml::Table = toml::from_str(&saved).expect("migrated settings table");
+            assert!(!saved.contains_key("omarchy_variant"));
+            assert_eq!(
+                read_preferences()
+                    .expect("migrated variants")
+                    .omarchy_variants,
+                HashMap::from([("fixture".into(), OmarchyVariant::Contrast)])
+            );
+            preferences.set_omarchy_variant(OmarchyVariant::Darker);
+            assert_ne!(themes.appearance_tokens(), migrated);
+        },
+    );
+}
+
+#[test]
 fn saved_omarchy_mode_loads_and_changes_through_the_same_binding() {
     gtk_test(
         "ui::preferences::tests::preferences::saved_omarchy_mode_loads_and_changes_through_the_same_binding",
@@ -1029,14 +1071,14 @@ fn saved_omarchy_mode_loads_and_changes_through_the_same_binding() {
             let startup = manager.appearance_tokens();
             for variant in [
                 OmarchyVariant::Darker,
-                OmarchyVariant::Original,
-                OmarchyVariant::HighContrast,
+                OmarchyVariant::Lighter,
+                OmarchyVariant::Contrast,
                 OmarchyVariant::Darker,
             ] {
                 preferences.set_omarchy_variant(variant);
                 crate::storage::writer::settle();
                 let tokens = manager.appearance_tokens();
-                assert_eq!(tokens == startup, variant == OmarchyVariant::Darker);
+                assert_eq!(tokens == startup, variant == OmarchyVariant::Lighter);
                 for window in &windows {
                     assert_theme_colors(window, &tokens);
                     let rebuilt_view = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1068,7 +1110,12 @@ fn saved_omarchy_mode_loads_and_changes_through_the_same_binding() {
                 );
                 crate::storage::writer::settle();
                 assert_eq!(
-                    read_preferences().expect("saved variant").omarchy_variant,
+                    read_preferences()
+                        .expect("saved variant")
+                        .omarchy_variants
+                        .get("fixture")
+                        .copied()
+                        .unwrap_or_default(),
                     variant
                 );
             }
@@ -1096,7 +1143,7 @@ fn saved_omarchy_mode_loads_and_changes_through_the_same_binding() {
             }
             manager.set_follow_omarchy(false);
             let builtin = manager.appearance_tokens();
-            preferences.set_omarchy_variant(OmarchyVariant::HighContrast);
+            preferences.set_omarchy_variant(OmarchyVariant::Contrast);
             assert_eq!(manager.appearance_tokens(), builtin);
             for window in &windows {
                 assert_theme_colors(window, &builtin);
@@ -1177,7 +1224,7 @@ fn invalid_omarchy_palette_while_running_keeps_the_applied_palette() {
             seed_omarchy_for_test();
             let mut preferences = non_default_preferences();
             preferences.mode = "omarchy".into();
-            preferences.omarchy_variant = OmarchyVariant::Original;
+            preferences.omarchy_variants.clear();
             fs::write(
                 settings_path(),
                 toml::to_string(&preferences).expect("Omarchy preference fixture"),
@@ -1292,7 +1339,7 @@ fn all_preference_setters_publish_and_persist_without_duplicate_notifications() 
                 |m| m.set_window_show_maximize(false),
                 |m| m.set_reduce_motion(false),
                 |m| m.set_element_glow(true),
-                |m| m.set_omarchy_variant(OmarchyVariant::HighContrast),
+                |m| m.set_omarchy_variant(OmarchyVariant::Contrast),
                 |m| m.set_file_icon_colors(FileIconColors::Brand),
                 |m| m.set_browser_mode(BrowserMode::Icons),
                 |m| m.set_browser_density(BrowserDensity::Custom(9)),
@@ -1350,6 +1397,7 @@ fn all_preference_setters_publish_and_persist_without_duplicate_notifications() 
                 |m| m.set_watch_network_folders(true),
                 |m| m.set_thumbnail_workers(3),
                 |m| m.set_show_thumbnails(true),
+                |m| m.set_stl_thumbnails(false),
                 |m| m.set_icons_thumbnail_size(96),
                 |m| m.set_chooser_column_width(Some(360)),
                 |m| m.set_chooser_list_columns(None),
@@ -2147,7 +2195,7 @@ fn list_columns_order_and_visibility_persist_and_update() {
             manager.set_list_column_visible(ListColumnId::Name, false);
             assert!(manager.is_list_column_visible(ListColumnId::Name));
 
-            manager.swap_list_columns(ListColumnId::Modified, ListColumnId::Type);
+            manager.move_list_column(ListColumnId::Modified, ListColumnId::Type, false);
             assert_eq!(
                 manager.list_column_order(),
                 vec![
@@ -2158,6 +2206,18 @@ fn list_columns_order_and_visibility_persist_and_update() {
                     ListColumnId::Type,
                 ]
             );
+            use ListColumnId::{Mode, Modified, Name, Size, Type};
+            for (column, target, after, expected) in [
+                (Name, Type, true, [Mode, Size, Modified, Type, Name]),
+                (Name, Mode, false, [Name, Mode, Size, Modified, Type]),
+                (Type, Name, false, [Type, Name, Mode, Size, Modified]),
+                (Type, Modified, true, [Name, Mode, Size, Modified, Type]),
+                (Size, Modified, false, [Name, Mode, Size, Modified, Type]),
+                (Modified, Modified, true, [Name, Mode, Size, Modified, Type]),
+            ] {
+                manager.move_list_column(column, target, after);
+                assert_eq!(manager.list_column_order(), expected);
+            }
             crate::storage::writer::settle();
 
             let saved = read_preferences().expect("saved preferences");

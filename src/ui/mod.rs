@@ -14,6 +14,7 @@ mod decoration;
 mod desktop_integration;
 mod document_media;
 mod document_view;
+mod enter_target;
 mod entry_list_model;
 mod file_providers;
 mod focus_navigation;
@@ -63,6 +64,8 @@ mod window;
 #[cfg(feature = "qa")]
 pub(crate) use accessibility::qa as accessibility_qa;
 pub(crate) use chooser::{cancel_chooser, present_chooser};
+#[cfg(feature = "qa")]
+pub(crate) use enter_target::CSS_CLASS as ENTER_TARGET_CLASS;
 pub(crate) use settings::schedule_rollback_cleanup;
 pub(crate) use window::default_save_folder;
 #[cfg(test)]

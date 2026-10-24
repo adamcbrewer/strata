@@ -33,6 +33,7 @@ thread_local! {
     static RENDER_QUEUE: RefCell<VecDeque<ThumbnailJob>> = const { RefCell::new(VecDeque::new()) };
     static RENDER_RUNNING: Cell<usize> = const { Cell::new(0) };
     static HEAVY_RUNNING: Cell<usize> = const { Cell::new(0) };
+    static MODEL_RUNNING: Cell<bool> = const { Cell::new(false) };
 }
 const MAX_QUEUED_THUMBNAILS: usize = 64;
 const FAILED_THUMBNAIL_TTL: Duration = Duration::from_secs(30);
@@ -394,6 +395,7 @@ enum ThumbnailKind {
     Video,
     AppImage,
     EmbeddedModel(crate::services::ModelFormat),
+    RenderedModel,
     Cover(crate::sandbox::CoverFormat),
 }
 
@@ -408,7 +410,8 @@ pub(super) fn set_thumbnail_or_icon(
     let Some(path) = entry.local_thumbnail_path() else {
         if entry.location.backend_name() == "gphoto2"
             && !entry.is_directory()
-            && thumbnail_kind(Path::new(&entry.native_name)).is_some()
+            && thumbnail_kind(Path::new(&entry.native_name))
+                .is_some_and(|kind| kind != ThumbnailKind::RenderedModel)
         {
             set_thumbnail_for_path(ThumbnailRequest {
                 image,
@@ -458,6 +461,9 @@ fn remote_mirror_thumbnail(entry: &FileEntry) -> Option<(PathBuf, ThumbnailKind)
         return None;
     }
     let kind = thumbnail_kind(Path::new(&entry.display_name))?;
+    if kind == ThumbnailKind::RenderedModel {
+        return None;
+    }
     let uri = entry.location.uri_value()?;
     let path = gio::File::for_uri(uri).path()?;
     Some((path, kind))
@@ -545,7 +551,11 @@ fn display_thumbnail_for_path(request: ThumbnailRequest<'_>) {
             .custom_icon(path)
             .is_some()
     });
-    if has_custom_icon || !super::preferences::PreferenceManager::shared().show_thumbnails() {
+    let preferences = super::preferences::PreferenceManager::shared();
+    if has_custom_icon
+        || !preferences.show_thumbnails()
+        || (request.kind == Some(ThumbnailKind::RenderedModel) && !preferences.stl_thumbnails())
+    {
         set_fallback_icon(
             request.image,
             customization_path,
@@ -963,6 +973,7 @@ fn heavy(kind: ThumbnailKind) -> bool {
             | ThumbnailKind::Pdf
             | ThumbnailKind::Video
             | ThumbnailKind::EmbeddedModel(_)
+            | ThumbnailKind::RenderedModel
             | ThumbnailKind::Cover(_)
     )
 }
@@ -975,17 +986,7 @@ pub(in crate::ui) fn set_worker_limit(workers: usize) {
 fn start_render_jobs() {
     let limit = crate::sandbox::browser::worker_limit();
     while RENDER_RUNNING.with(Cell::get) < limit {
-        let job = RENDER_QUEUE.with(|queue| {
-            let mut queue = queue.borrow_mut();
-            queue.retain(|job| !job.cancellation.is_cancelled());
-            queue
-                .make_contiguous()
-                .sort_by_cached_key(|job| viewport::key_priority(&job.key));
-            let index = queue.iter().position(|job| {
-                !heavy(job.kind) || HEAVY_RUNNING.with(Cell::get) < limit.saturating_sub(1).max(1)
-            })?;
-            queue.remove(index)
-        });
+        let job = next_render_job(limit);
         let Some(job) = job else {
             break;
         };
@@ -1001,8 +1002,27 @@ fn start_render_jobs() {
         if heavy(job.kind) {
             HEAVY_RUNNING.with(|running| running.set(running.get() + 1));
         }
+        if job.kind == ThumbnailKind::RenderedModel {
+            MODEL_RUNNING.with(|running| running.set(true));
+        }
         glib::MainContext::default().spawn_local(run_render_job(job));
     }
+}
+
+fn next_render_job(limit: usize) -> Option<ThumbnailJob> {
+    RENDER_QUEUE.with(|queue| {
+        let mut queue = queue.borrow_mut();
+        queue.retain(|job| !job.cancellation.is_cancelled());
+        queue
+            .make_contiguous()
+            .sort_by_cached_key(|job| viewport::key_priority(&job.key));
+        let index = queue.iter().position(|job| {
+            (job.kind != ThumbnailKind::RenderedModel || !MODEL_RUNNING.with(Cell::get))
+                && (!heavy(job.kind)
+                    || HEAVY_RUNNING.with(Cell::get) < limit.saturating_sub(1).max(1))
+        })?;
+        queue.remove(index)
+    })
 }
 
 async fn run_render_job(job: ThumbnailJob) {
@@ -1031,10 +1051,14 @@ async fn run_render_job(job: ThumbnailJob) {
             .map(|png| (png, true))
     };
     let was_heavy = heavy(job.kind);
+    let was_model = job.kind == ThumbnailKind::RenderedModel;
     finish_thumbnail_job(job, result).await;
     RENDER_RUNNING.with(|running| running.set(running.get().saturating_sub(1)));
     if was_heavy {
         HEAVY_RUNNING.with(|running| running.set(running.get().saturating_sub(1)));
+    }
+    if was_model {
+        MODEL_RUNNING.with(|running| running.set(false));
     }
     drop(preview_turn);
     start_render_jobs();
@@ -1672,6 +1696,7 @@ fn thumbnail_kind(path: &Path) -> Option<ThumbnailKind> {
         "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "tif" | "tiff" | "svg" | "heic"
         | "heif" | "avif" | "jxl" => Some(ThumbnailKind::Image),
         "pdf" => Some(ThumbnailKind::Pdf),
+        "stl" => Some(ThumbnailKind::RenderedModel),
         "3mf" => Some(ThumbnailKind::EmbeddedModel(
             crate::services::ModelFormat::ThreeMf,
         )),
@@ -1696,6 +1721,29 @@ fn render_thumbnail(
     cancellation: &Cancellation,
 ) -> Result<crate::sandbox::browser::Thumbnail, String> {
     let operation = match kind {
+        ThumbnailKind::RenderedModel => {
+            let rendered = crate::sandbox::parse(
+                path,
+                ParseOperation::PreviewModel(crate::services::ModelRender {
+                    purpose: crate::services::ModelRenderPurpose::Thumbnail,
+                    format: crate::services::ModelFormat::Stl,
+                    size: crate::services::MediaPreviewSize::new(256, 256),
+                    // Shared thumbnail-cache artwork must not depend on the active theme.
+                    palette: crate::services::ModelPalette {
+                        accent: 0xcccccc,
+                        surface: 0,
+                    },
+                    view: crate::services::ModelView::default(),
+                }),
+                256,
+                crate::sandbox::MediaPreviewBackend::Software,
+                cancellation,
+            )?;
+            return Ok(crate::sandbox::browser::Thumbnail {
+                png: rendered.data,
+                metadata: None,
+            });
+        }
         ThumbnailKind::Camera => return Err("Camera thumbnails require their preview icon".into()),
         ThumbnailKind::Image => ParseOperation::ThumbnailImage,
         ThumbnailKind::RawImage => ParseOperation::ThumbnailRaw,

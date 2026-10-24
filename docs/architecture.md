@@ -150,6 +150,7 @@ The browser and open/save chooser use the same collection behavior, not a univer
 | `ui/collection_interaction.rs` | Display-position pointer transitions (Ctrl toggle, Shift range, plain selection/drag-group preservation) and press/release/cancel ownership. Modified sequences are claimed only on release so marquee can participate. |
 | `ui/search_session.rs` | Root, hidden-file and recursive-scope inputs; worker/receiver, query intent, generation, bounded event draining, cancellation, status/coverage delivery, pruning the hits a worker proves gone, and starting a confined source's search only once a worker places its root inside the boundary. It knows neither widgets nor acceptance/navigation policy. |
 | `ui/inline_search.rs` | Single-pane search composition and transactional consumer selection publication. `inline_search/collection.rs` owns stable result objects and displayed-order lookup; `presentation.rs` builds and binds typed row/card parts. |
+| `ui/enter_target.rs` | Which result Enter in a filter field opens: the top one until the user picks another after the query last changed. Outlines it while the field has focus, keeps it scrolled into view until the user scrolls, and tells the result surfaces when a new query drops the old selection. A selection or focus change counts as the pick unless the surface reports it as its own write. Off in 10xer. |
 | `ui/browser/columns/search.rs` | Native Columns result reconciliation. Its result vector is authoritative; the string model is only a label projection, updated in lockstep under selection suppression. Columns keeps its multi-depth navigation and native collection. |
 | `ui/collection_edit.rs` | A rename lease on an entry identity and typed editor/display handles: validation, submission signals, cancellation, focus, reveal tick and cleanup. It has no `ViewState` or `browser_modes` dependency. |
 | Browser/chooser adapters | Activation, single-click preview/navigation, selection cardinality, filename/preview updates, context commands and filesystem-operation coordination. `browser/inline_edit.rs` retains pending-operation identities, optimistic labels, refresh/error handling and operation safety. |
@@ -161,7 +162,11 @@ resolve activation, selection, drag, context and edit targets through the sorted
 the path/rank map only supplies ordering to its sorter. Basenames are never identity.
 
 Single-pane publication captures selected/focused paths before reconciliation and restores
-selection by identity. Restoring focus never reselects an explicitly deselected entry.
+selection by identity while the query stays the same; a changed query text publishes an empty
+selection in both single-pane results and Columns search results, so Enter in the field falls
+back to the top result that `ui/enter_target.rs` outlines. A filter that narrows a listing
+without a native path in place keeps that listing's own selection; the new query only stops it
+counting as the pick. Restoring focus never reselects an explicitly deselected entry.
 If the last selected result disappears, it retains the nearest previous
 selection slot; Columns intentionally leaves the selection empty when its selected result
 vanishes. Columns uses per-column hidden-file preferences and does not display a separate

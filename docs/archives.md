@@ -10,8 +10,11 @@ also known as Zip Slip.
 Strata resolves parent components without allowing them to walk above the
 selected destination. For example, both `../report.txt` and
 `folder/../report.txt` become `report.txt`. Extraction then continues with later
-members instead of aborting the entire operation. Empty paths, absolute paths,
-and Windows drive prefixes remain invalid.
+members instead of aborting the entire operation. A directory entry that names
+only the archive root (`.`, `./`, `././`, or the same name with backslashes)
+is skipped. Other empty paths stay invalid, including a file or link named `.`
+and a directory that reaches the root through `..`. Absolute paths and Windows
+drive prefixes remain invalid.
 
 The sanitized path still passes through the descriptor-relative destination
 writer, which refuses symlink traversal. Normal conflict renaming also applies,

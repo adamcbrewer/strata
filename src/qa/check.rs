@@ -114,6 +114,7 @@ impl Controller {
                         (check.editable, states.editable),
                         (check.focusable, states.focusable),
                         (check.busy, states.busy),
+                        (check.marked, states.marked),
                     ];
                     verdict(
                         wanted
@@ -129,6 +130,7 @@ impl Controller {
                             "editable": states.editable,
                             "focusable": states.focusable,
                             "busy": states.busy,
+                            "marked": states.marked,
                         }),
                     )
                 }

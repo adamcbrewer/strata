@@ -3142,6 +3142,18 @@ fn list_display_names(widget: &gtk::Widget) -> Vec<String> {
     Vec::new()
 }
 
+/// The mapped rows outlined as the one Enter in a filter field opens.
+fn marked_rows(widget: &gtk::Widget) -> Vec<gtk::Widget> {
+    let mut marked = Vec::new();
+    if widget.is_mapped() && widget.has_css_class(crate::ui::enter_target::CSS_CLASS) {
+        marked.push(widget.clone());
+    }
+    for child in std::iter::successors(widget.first_child(), gtk::Widget::next_sibling) {
+        marked.extend(marked_rows(&child));
+    }
+    marked
+}
+
 fn pump(millis: u64) {
     let deadline = Instant::now() + Duration::from_millis(millis);
     while Instant::now() < deadline {

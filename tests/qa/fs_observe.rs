@@ -349,6 +349,19 @@ impl FsCheck {
                     .then_some(())
                     .ok_or(format!("the pixel is {found:?}"))
             }
+            FsKind::AlphaRange(range) => {
+                let image = image::open(&path)
+                    .map_err(|error| format!("{}: {error}", path.display()))?
+                    .to_rgba8();
+                let alphas = image.pixels().map(|pixel| pixel.0[3]);
+                let found = [
+                    alphas.clone().min().unwrap_or_default(),
+                    alphas.max().unwrap_or_default(),
+                ];
+                (found == range)
+                    .then_some(())
+                    .ok_or(format!("the alpha range is {found:?}"))
+            }
             FsKind::KeepMtime(name) => {
                 let mtime = modified_nanos(&path)?;
                 state.mtimes.insert(name.to_owned(), mtime);

@@ -24,6 +24,7 @@ pub(super) struct CollectionBehavior {
     pub(super) single_click: Rc<dyn Fn(FileEntry)>,
     pub(super) focus_items: Rc<dyn Fn()>,
     pub(super) focus_entry: Rc<dyn Fn() -> bool>,
+    pub(super) enter: crate::ui::enter_target::EnterTarget,
 }
 
 #[derive(Clone)]
@@ -92,6 +93,20 @@ impl ResultCollection {
             .downcast::<glib::BoxedAnyObject>()
             .ok()?;
         Some(object.borrow::<SearchItem>().clone())
+    }
+
+    pub(super) fn visit_bound(&self) -> crate::ui::marquee::ItemVisitor {
+        let bound = self.bound.clone();
+        Rc::new(move |visit| {
+            bound.borrow_mut().retain(|bound| {
+                let (Some(item), Some(widget)) = (bound.item.upgrade(), bound.widget.upgrade())
+                else {
+                    return false;
+                };
+                visit(item.position(), &widget);
+                true
+            });
+        })
     }
 
     pub(super) fn items(&self) -> Vec<SearchItem> {
@@ -198,18 +213,24 @@ impl ResultCollection {
         })
     }
 
-    pub(super) fn update(&self, items: &[SearchItem], recursive: bool) {
+    /// Shows `items`, keeping the selection by identity unless the query changed.
+    pub(super) fn update(&self, items: &[SearchItem], recursive: bool, keep_selection: bool) {
         self.reconciling.set(true);
         self.gesture_selection.borrow_mut().take();
-        let selected_paths: Vec<_> = self
-            .selected_positions()
-            .into_iter()
-            .filter_map(|position| self.item(position as u32).map(|item| item.path))
+        let kept = if keep_selection {
+            self.selected_positions()
+        } else {
+            Vec::new()
+        };
+        let selected_paths: Vec<_> = kept
+            .iter()
+            .filter_map(|position| self.item(*position as u32).map(|item| item.path))
             .collect();
-        let selected_slot = self.selected_positions().into_iter().next();
+        let selected_slot = kept.first().copied();
         let anchor_path = self
             .anchor
             .get()
+            .filter(|_| keep_selection)
             .and_then(|position| self.item(position))
             .map(|item| item.path);
         let focused_widget = self.view.root().and_then(|root| root.focus());
@@ -633,6 +654,7 @@ pub(super) fn build_collection(
     let bound_for_bind = bound.clone();
     let highlights = Rc::new(RefCell::new(NameHighlights::default()));
     let highlights_for_bind = highlights.clone();
+    let enter_for_bind = behavior.enter.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk::ListItem>() else {
             return;
@@ -650,6 +672,7 @@ pub(super) fn build_collection(
             .find(|bound| bound.item.upgrade().as_ref() == Some(item))
             .map(|bound| bound.presentation.clone());
         if let Some(presentation) = presentation {
+            enter_for_bind.decorate(&presentation.widget, item);
             presentation.bind(
                 &kind_for_bind,
                 item,

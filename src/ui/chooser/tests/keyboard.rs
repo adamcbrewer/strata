@@ -940,3 +940,47 @@ fn default_map_enter_keeps_single_selection_and_folder_navigation() {
         },
     );
 }
+
+#[test]
+fn enter_in_the_filter_field_chooses_the_top_result_in_every_view() {
+    crate::test_support::gtk_test(
+        "ui::chooser::tests::keyboard::enter_in_the_filter_field_chooses_the_top_result_in_every_view",
+        || {
+            for mode in [BrowserMode::Columns, BrowserMode::List, BrowserMode::Icons] {
+                let chooser = Chooser::open_with(
+                    single_file(),
+                    mode,
+                    &["notes.txt", "notes-old.txt", "other.txt"],
+                    false,
+                );
+                chooser.focus_files();
+                assert!(
+                    chooser.press_with(Key::f, ModifierType::CONTROL_MASK),
+                    "{mode:?}"
+                );
+                let field = gtk::prelude::RootExt::focus(&chooser.state.window)
+                    .and_then(|focus| focus.ancestor(gtk::Entry::static_type()))
+                    .and_downcast::<gtk::Entry>()
+                    .expect("filter field");
+                field.set_text("notes");
+                wait_until(|| chooser.state.view.filter_result_names().len() == 2);
+                let top = chooser.state.view.filter_result_names()[0].clone();
+                let controllers = field.observe_controllers();
+                let handled = (0..controllers.n_items())
+                    .filter_map(|index| {
+                        controllers
+                            .item(index)
+                            .and_downcast::<gtk::EventControllerKey>()
+                    })
+                    .any(|keys| {
+                        keys.emit_by_name::<bool>(
+                            "key-pressed",
+                            &[&Key::Return, &0u32, &ModifierType::empty()],
+                        )
+                    });
+                assert!(handled, "{mode:?}: Enter in the field was not handled");
+                assert_eq!(chooser.chosen(), [chooser.uri(&top)], "{mode:?}");
+            }
+        },
+    );
+}

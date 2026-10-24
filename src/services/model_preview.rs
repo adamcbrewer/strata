@@ -137,7 +137,14 @@ impl ModelView {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ModelRenderPurpose {
+    Preview,
+    Thumbnail,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct ModelRender {
+    pub purpose: ModelRenderPurpose,
     pub format: ModelFormat,
     pub size: MediaPreviewSize,
     pub palette: ModelPalette,

@@ -111,7 +111,7 @@ pub(crate) fn entry_supports_quick_preview(entry: &FileEntry) -> bool {
         gio::content_type_guess(Some(Path::new(&entry.native_name)), None::<&[u8]>);
     let content = crate::services::content_family(&content_type);
     if crate::services::table::is_workbook(&content_type, &entry.native_name)
-        || crate::services::docx::is_document(&content_type, &entry.native_name)
+        || crate::sandbox::DocumentFormat::for_file(&content_type, &entry.native_name).is_some()
     {
         return native_path.is_some();
     }
@@ -1713,8 +1713,17 @@ impl PreviewState {
                 );
             }
             PreviewContent::Rendered { document, warnings } => {
-                let (view, state) =
-                    super::virtual_preview::rendered_document(document, warnings, false, None);
+                let word_processor = crate::sandbox::DocumentFormat::for_file(
+                    &preview.content_type,
+                    &preview.entry.native_name,
+                )
+                .is_some();
+                let (view, state) = super::virtual_preview::rendered_document(
+                    document,
+                    warnings,
+                    word_processor,
+                    None,
+                );
                 self.rendered_text.replace(Some(state));
                 self.content.append(&view);
             }

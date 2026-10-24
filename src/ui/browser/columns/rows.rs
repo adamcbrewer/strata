@@ -62,6 +62,10 @@ pub(super) struct ColumnRows {
     pub(super) scrolling: Rc<Cell<bool>>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each column's row factory binds to that column's own models and state"
+)]
 pub(super) fn column_rows(
     state: &Rc<ViewState>,
     depth: usize,
@@ -70,6 +74,7 @@ pub(super) fn column_rows(
     recursive_search_active: &Rc<Cell<bool>>,
     search_results: &Rc<RefCell<Vec<SearchItem>>>,
     hits: &Rc<RefCell<super::ColumnHits>>,
+    enter_target: &crate::ui::enter_target::EnterTarget,
 ) -> ColumnRows {
     let scrolling = Rc::new(Cell::new(false));
     let factory = gtk::SignalListItemFactory::new();
@@ -853,6 +858,7 @@ pub(super) fn column_rows(
     let map_for_bind = map.clone();
     let weak_state_for_bind = Rc::downgrade(state);
     let search_active_for_bind = recursive_search_active.clone();
+    let enter_for_bind = enter_target.clone();
     let search_results_for_bind = search_results.clone();
     let hits_for_bind = hits.clone();
     let scrolling_for_bind = scrolling.clone();
@@ -919,6 +925,7 @@ pub(super) fn column_rows(
         } else {
             row.remove_css_class("filter-result");
         }
+        enter_for_bind.decorate(&row, item);
         let source_position = (!searching)
             .then(|| map_for_bind.source_position(item.position()))
             .flatten();

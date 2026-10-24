@@ -44,6 +44,7 @@ catalog! {
 
         TAB_NEW: Binding = Binding::ctrl(Key::t);
         TAB_CLOSE: Binding = Binding::ctrl(Key::w);
+        TAB_REOPEN: Binding = Binding::ctrl_shift(Key::t);
         TAB_NEXT: Binding = Binding::ctrl(Key::Tab);
         TAB_PREVIOUS: Binding = Binding::ctrl_shift(Key::Tab);
         TAB_PREVIOUS_PAGE_UP: Binding = Binding::ctrl(Key::Page_Up);

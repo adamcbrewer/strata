@@ -662,6 +662,7 @@
   "Rename the focused item in the footer": "Đổi tên mục đang được chọn ở chân trang",
   "Rendering page %{completed} of %{total}": "Đang kết xuất trang %{completed} trên %{total}",
   "Rendering pages for the print dialog": "Đang kết xuất các trang cho hộp thoại in",
+  "Reopen the last closed tab": "Mở lại thẻ vừa đóng",
   "Repeat the last find / in reverse": "Lặp lại lần tìm gần nhất / theo chiều ngược lại",
   "Replace": "Thay thế",
   "Replace existing file?": "Thay thế tệp hiện có?",

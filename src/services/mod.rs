@@ -20,6 +20,7 @@ pub(crate) mod model_preview;
 mod native_fs;
 mod navigation_history;
 mod network_error;
+pub(crate) mod odt;
 mod operations;
 pub(crate) mod package_manager;
 mod path_match;
@@ -63,8 +64,8 @@ pub use jobs::{
 };
 pub(crate) use listeners::ListenerGuard;
 pub use mime_type::{EntryType, FOLDER_TYPE_NAME, OTHER_TYPE_NAME, entry_type};
-pub(crate) use model_preview::ModelRender;
 pub use model_preview::{ModelEncoding, ModelFormat, ModelMesh, ModelPalette, ModelView};
+pub(crate) use model_preview::{ModelRender, ModelRenderPurpose};
 pub(crate) use native_fs::{
     is_hidden_name, link_target_kind, listed_kind, native_hidden_names, native_kind, symlink_kind,
 };

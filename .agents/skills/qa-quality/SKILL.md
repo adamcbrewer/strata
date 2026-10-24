@@ -297,6 +297,14 @@ keep/drop verdict.
    the original, so an interrupted write never leaves a truncated file. Every
    other byte of the file stays as it was. Editing by hand is allowed under the same rule:
    change only the `quality` value on line 1.
+9. **Have an independent grader check it.** When an agent wrote or changed
+   the scenario, a separate subagent on a cheap model (Haiku) grades it blind
+   with this rubric: tell it to ignore the existing `quality` field, to cite
+   the overlapping tests, churn and fix commits behind each dimension, and to
+   edit nothing. Compare its four dimensions with yours. Re-read the anchors
+   and settle any dimension that differs by 2 or more, or a `score` that
+   differs by more than 10; rewrite the field if you change your mind. Report
+   both gradings in the handoff or PR, not in the note.
 
 ## Applying the rubric to the whole corpus
 

@@ -136,6 +136,7 @@ pub(crate) struct FsCheck {
     except_suffix: Option<String>,
     thumbnail: Option<Thumbnail>,
     pixel: Option<PixelAt>,
+    alpha_range: Option<[u8; 2]>,
     keep_mtime: Option<String>,
     mtime_of: Option<String>,
     executable: Option<bool>,
@@ -256,6 +257,7 @@ pub(crate) enum FsKind<'a> {
     AllCached(&'a str, Option<&'a str>),
     Thumbnail(&'a Thumbnail),
     Pixel(&'a PixelAt),
+    AlphaRange([u8; 2]),
     KeepMtime(&'a str),
     MtimeOf(&'a str),
     Executable(bool),
@@ -479,6 +481,9 @@ impl FsCheck {
         if let Some(pixel) = &self.pixel {
             kinds.push(FsKind::Pixel(pixel));
         }
+        if let Some(range) = self.alpha_range {
+            kinds.push(FsKind::AlphaRange(range));
+        }
         if let Some(name) = &self.keep_mtime {
             kinds.push(FsKind::KeepMtime(name));
         }
@@ -596,12 +601,14 @@ impl FsCheck {
                 [FsKind::Exists(_)
                     | FsKind::Is(_)
                     | FsKind::Pixel(_)
+                    | FsKind::AlphaRange(_)
                     | FsKind::KeepMtime(_)
                     | FsKind::MtimeOf(_)]
             )
         {
             return Err(
-                "cached_in reads a thumbnail for exists, is, pixel, keep_mtime, or mtime_of"
+                "cached_in reads a thumbnail for exists, is, pixel, alpha_range, keep_mtime, or \
+                 mtime_of"
                     .to_owned(),
             );
         }
@@ -613,7 +620,7 @@ impl FsCheck {
                  lines, bytes_of, write, remember, remember_names, keep_bytes, mkdir, chmod, \
                  populate, image, ffmpeg, zip, truncate, from_repository, volume, \
                  remove_volume, symlink, program, remove, rename, all_cached_in, thumbnail, \
-                 pixel, keep_mtime, mtime_of, executable, mtime, hex, base64, append, \
+                 pixel, alpha_range, keep_mtime, mtime_of, executable, mtime, hex, base64, append, \
                  raw_photo, tar_gz, zip_members, tar_members, is_zip, default_app, opened, \
                  toml, toml_like, json, json_set, launches, replace_lines, pdf_image, magick, \
                  random, size, glob_none, lines_equal, toml_prefix, png, zip_member, or \

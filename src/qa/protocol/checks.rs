@@ -346,6 +346,8 @@ pub(crate) struct StateCheck {
     pub(crate) focusable: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) busy: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) marked: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]

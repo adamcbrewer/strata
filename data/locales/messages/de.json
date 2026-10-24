@@ -662,6 +662,7 @@
   "Rename the focused item in the footer": "Fokussiertes Element in der Fußzeile umbenennen",
   "Rendering page %{completed} of %{total}": "Seite %{completed} von %{total} wird dargestellt",
   "Rendering pages for the print dialog": "Seiten für den Druckdialog werden dargestellt",
+  "Reopen the last closed tab": "Zuletzt geschlossenen Tab wieder öffnen",
   "Repeat the last find / in reverse": "Letzte Suche wiederholen / in umgekehrter Richtung",
   "Replace": "Ersetzen",
   "Replace existing file?": "Vorhandene Datei ersetzen?",

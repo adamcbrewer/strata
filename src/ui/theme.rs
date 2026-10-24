@@ -242,10 +242,13 @@ impl ThemeManager {
         let preferences = PreferenceManager::shared();
         let themes = merge_builtin_and_custom_themes(builtins(), load_custom_themes());
         let omarchy = OmarchyRefresh::read();
+        if let Some(state) = &omarchy.state {
+            preferences.set_active_omarchy_theme(&state.name);
+        }
         let omarchy_available = omarchy
             .state
             .as_ref()
-            .and_then(|state| state.tokens(OmarchyVariant::Original))
+            .and_then(|state| state.tokens(OmarchyVariant::Lighter))
             .is_some();
         preferences.normalize_loaded_theme_selection(
             |id| themes.iter().any(|theme| theme.id == id),
@@ -804,7 +807,11 @@ impl ThemeManager {
     fn apply_omarchy_refresh(self: &Rc<Self>, refresh: OmarchyRefresh) {
         self.monitor_omarchy(&refresh.directories);
         let unchanged = self.omarchy_state.replace(refresh.state.clone()) == refresh.state;
-        let available = self.omarchy_tokens(OmarchyVariant::Original).is_some()
+        if let Some(state) = &refresh.state {
+            self.preferences.set_active_omarchy_theme(&state.name);
+            self.appearance.borrow_mut().omarchy_variant = self.preferences.omarchy_variant();
+        }
+        let available = self.omarchy_tokens(OmarchyVariant::Lighter).is_some()
             || (self.is_omarchy_available() && refresh.name_exists);
         let availability_changed = self.omarchy_available.replace(available) != available;
         if !available && self.follows_omarchy() {
@@ -816,8 +823,11 @@ impl ThemeManager {
             self.preferences.notify_changes();
             return;
         }
-        if !unchanged && self.follows_omarchy() {
-            self.apply_selected();
+        if !unchanged {
+            if self.follows_omarchy() {
+                self.apply_selected();
+            }
+            // Republishes the variant remembered for a newly active theme.
             self.preferences.notify_changes();
         }
     }
@@ -1054,15 +1064,18 @@ fn tokens_from_quattro(name: &str, source: &str, variant: OmarchyVariant) -> Opt
     let source_background = get("background")?;
     let text = get("foreground")?;
     let accent = get("accent")?;
-    let selection = get("selection").unwrap_or_else(|| accent.clone());
-    let shadow = get("color8").unwrap_or_else(|| source_background.clone());
+    let selection = get("selection").unwrap_or_else(|| blend(&source_background, &accent, 0.25));
+    // Some themes set lighter_background equal to background, which would hide hover.
+    let lighter = get("lighter_background")
+        .filter(|lighter| *lighter != source_background)
+        .unwrap_or_else(|| blend(&source_background, &text, 0.10));
     let mut tokens = ThemeTokens {
         name: title_case_slug(name),
-        background: blend(&source_background, &shadow, 0.35),
-        surface: blend(&source_background, &shadow, 0.65),
-        muted: blend(&shadow, &text, 0.10),
+        background: source_background.clone(),
+        surface: get("dark_background").unwrap_or_else(|| source_background.clone()),
+        muted: lighter,
         highlight: selection,
-        border: blend(&shadow, &text, 0.36),
+        border: get("muted").unwrap_or_else(|| blend(&source_background, &text, 0.36)),
         dim_text: blend(&source_background, &text, 0.62),
         text,
         accent,
@@ -1073,10 +1086,12 @@ fn tokens_from_quattro(name: &str, source: &str, variant: OmarchyVariant) -> Opt
         syntax_type: get("cyan").or_else(|| get("color3")),
         syntax_preprocessor: get("yellow"),
     };
-    if variant != OmarchyVariant::Original {
-        let palette = source_palette_from_quattro(source);
-        omarchy::apply_variant(&mut tokens, &source_background, variant, palette.as_ref());
-    }
+    let light = omarchy::is_light(
+        &source_background,
+        values.get("mode").and_then(toml::Value::as_str),
+    );
+    let palette = source_palette_from_quattro(source);
+    omarchy::apply_variant(&mut tokens, light, variant, palette.as_ref());
     Some(tokens)
 }
 

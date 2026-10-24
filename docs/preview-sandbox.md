@@ -105,6 +105,9 @@ isolation, resource limits, or the other narrow optional runtime mounts.
 - Local DOCX previews run `docx-rs` in the same helper under the same 20 MiB input
   limit. Only a validated, bounded JSON payload of generated HTML returns, and the
   application reparses it with the existing bounded HTML parser.
+- Local ODT and OTT previews stream `content.xml` and `styles.xml` through
+  `quick-xml` in the same helper under the same 20 MiB input limit, and return the
+  same validated HTML payload as DOCX.
 - Local [Markdown, bounded HTML, RTF, CSV, and TSV previews](document-previews.md) are parsed
   in-process by pure-Rust parsers that receive only the bounded source string and
   cannot initiate filesystem access, network access, JavaScript execution, or
@@ -154,13 +157,32 @@ candidates are corrupt or its geometry spans multiple model parts. Two usable
 images are ambiguous: Quick Preview tries geometry, while browser thumbnailing
 leaves the normal file icon. Multipart geometry is not rendered.
 
-Browser thumbnails extract embedded images only, through the **existing browser
+3MF and FreeCAD browser thumbnails extract embedded images only, through the **existing browser
 worker pool** and its normal cache, cancellation and slow-job admission. There is
-no geometry fallback, new pool or thumbnail job for STL. The decoder does not read
+no geometry fallback or new pool. The decoder does not read
 model XML when selecting an embedded image. Missing or unusable images leave the
 file icon, with the existing failure cache preventing immediate retries.
 
-Heavy Quick Previews (models, PDFs, workbooks and DOCX) share one process-wide
+Local STL browser thumbnails are a separate opt-in under **Settings → Appearance
+→ File icons → STL model thumbnails**; **Show thumbnails** must also be enabled.
+They reuse the software model renderer in a one-shot sandbox at 256×256, with a
+fixed camera, neutral model colors and a transparent background for the shared
+freedesktop thumbnail cache. The existing
+browser queue admits at most one such render across all windows in the process,
+within its general worker limit, and cancels obsolete requests normally. This
+does not create a reusable worker pool or raise any model/sandbox limits. An
+interactive Quick Preview may run concurrently; it does not share this background
+STL slot. Disabling the option hides cached STL thumbnails as well as preventing
+new renders. It does not delete PNG thumbnails already stored in
+`$XDG_CACHE_HOME/thumbnails/large`; other freedesktop clients may still display them.
+Cancellation or the wall deadline sends SIGKILL and releases the background STL
+worker and admission slot without waiting for the helper to be reaped. A detached
+waiter keeps its private output and file-operation hold alive until reaping and
+namespace cleanup finish. A killed helper stuck in kernel I/O can therefore
+overlap a later render until the kernel allows it to exit. Interactive Quick Preview
+retains its existing wait-for-exit policy. Failed models retain the file icon and normal retry backoff.
+
+Heavy Quick Previews (models, PDFs, workbooks, DOCX and ODT) share one process-wide
 permit and use one-shot sandboxes. Cancellation retains that permit until the
 helper exits. Format is carried explicitly across the sandbox boundary, including
 for symlinks; the UI supplies the render palette. Geometry PNG cache keys include

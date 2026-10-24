@@ -16,7 +16,9 @@ use gtk::gio;
 
 use crate::{
     adapters::{encode_archive_result, list_archive_entries_direct},
-    sandbox::{FILE_SIZE_LIMIT_BYTES, MAX_OUTPUT_BYTES, MediaPreviewBackend, PdfRenderSize},
+    sandbox::{
+        DocumentFormat, FILE_SIZE_LIMIT_BYTES, MAX_OUTPUT_BYTES, MediaPreviewBackend, PdfRenderSize,
+    },
     services::{ArchiveFormat, MediaPreviewSize},
 };
 
@@ -131,7 +133,11 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
         return fs::write(output, bytes).map_err(|e| e.to_string());
     }
     if operation == "preview-document" {
-        let document = crate::services::docx::read_document(input)?;
+        let document =
+            match DocumentFormat::from_argument(value).ok_or("Invalid document format")? {
+                DocumentFormat::Docx => crate::services::docx::read_document(input)?,
+                DocumentFormat::Odt => crate::services::odt::read_document(input)?,
+            };
         let bytes = serde_json::to_vec(&document).map_err(|e| e.to_string())?;
         if bytes.len() as u64 > MAX_OUTPUT_BYTES {
             return Err("Document output budget exceeded".into());

@@ -735,7 +735,8 @@ shows no hint. Default-map hints that are unbound or remapped (**y** for copy pa
 ## Not bound
 
 Tabs use the same shortcuts in both modes: **Ctrl+T** creates a tab,
-**Ctrl+W** closes it, **Ctrl+Tab / Ctrl+Shift+Tab** cycles tabs, and
+**Ctrl+W** closes it, **Ctrl+Shift+T** reopens the last closed tab,
+**Ctrl+Tab / Ctrl+Shift+Tab** cycles tabs, and
 **Ctrl+Page Up / Ctrl+Page Down** selects the previous / next tab, wrapping at
 either end.
 **Ctrl+Shift+Page Up / Ctrl+Shift+Page Down** moves the active tab left / right,
