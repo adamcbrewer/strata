@@ -270,7 +270,7 @@ when altitude is available. Playback uses calculated ground distance between GPS
 points, not screen length or recorded timestamps.
 
 The helper prepares a single projected trace with cumulative distance, segment
-boundaries and optional elevation coordinates. Both PNGs are drawn from this
+boundaries and optional elevation coordinates. Both PNG images are drawn from this
 trace, and the same samples drive hover and playback in the UI. The plot owns
 coordinate transforms, picking and marker drawing; the player owns position and
 the playback timer. Host validation requires the PNG dimensions to match the
