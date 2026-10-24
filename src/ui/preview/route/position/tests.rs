@@ -108,15 +108,15 @@ fn hover_stays_on_the_same_nearby_pass_without_snapping_to_recorded_points() {
     let samples = [
         sample(0.0, 0.0, 0.0, Some(10.0), true),
         sample(100.0, 0.0, 100.0, Some(20.0), false),
-        sample(100.0, 1.0, 1000.0, Some(30.0), true),
-        sample(0.0, 1.0, 1100.0, Some(40.0), false),
+        sample(100.0, 1.0, 100.0, Some(30.0), true),
+        sample(0.0, 1.0, 200.0, Some(40.0), false),
     ];
-    let mut previous = 1070.0;
+    let mut previous = 170.0;
     for x in [25.0, 24.5, 24.0] {
         let hovered =
             nearest(&samples, [x, 0.4], Some(previous), 2.0).expect("position on the return pass");
         assert_eq!(hovered.position, [x as f32, 1.0]);
-        assert_eq!(hovered.distance_m, 1100.0 - x);
+        assert_eq!(hovered.distance_m, 200.0 - x);
         assert_eq!(at_distance(&samples, hovered.distance_m), Some(hovered));
         previous = hovered.distance_m;
     }
