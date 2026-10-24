@@ -6,7 +6,7 @@ use super::{
     plot::{Plot, PlotKind},
     position,
 };
-use crate::services::route_preview::RouteSample;
+use crate::services::route_preview::{RouteSample, profile_elevation};
 use crate::ui::preferences::{PreferenceManager, UnitSystem};
 use gtk::{glib, prelude::*};
 use std::{
@@ -26,6 +26,7 @@ pub(in crate::ui::preview) struct RoutePlayer {
     units: Cell<UnitSystem>,
     samples: Vec<RouteSample>,
     distance_m: f64,
+    elevation: Option<[f64; 2]>,
     pub(in crate::ui::preview) position: Cell<Option<RouteSample>>,
     tick: RefCell<Option<gtk::TickCallbackId>>,
     last_frame: Cell<Option<i64>>,
@@ -38,6 +39,7 @@ impl RoutePlayer {
         profile: Option<Plot>,
         samples: Vec<RouteSample>,
         distance_m: f64,
+        elevation: Option<[f64; 2]>,
     ) -> Rc<Self> {
         let icon = crate::assets::primary_icon(crate::assets::icons::PLAY, 22);
         let play = gtk::ToggleButton::new();
@@ -62,6 +64,7 @@ impl RoutePlayer {
             units: Cell::new(UnitSystem::Metric),
             samples,
             distance_m,
+            elevation,
             position,
             tick: RefCell::default(),
             last_frame: Cell::default(),
@@ -151,6 +154,15 @@ impl RoutePlayer {
                 player.hover(kind, x, y);
             }
         });
+        let weak = Rc::downgrade(self);
+        motion.connect_leave(move |_| {
+            if let Some(player) = weak.upgrade() {
+                player.last_pointer.set(None);
+                if let Some(profile) = player.profile.as_ref() {
+                    profile.frame.set_tooltip_text(None);
+                }
+            }
+        });
         plot.frame.add_controller(motion);
     }
 
@@ -196,6 +208,9 @@ impl RoutePlayer {
     }
 
     fn start(self: &Rc<Self>) {
+        if let Some(profile) = self.profile.as_ref() {
+            profile.frame.set_tooltip_text(None);
+        }
         if self
             .position
             .get()
@@ -242,7 +257,37 @@ impl RoutePlayer {
         self.last_frame.set(None);
     }
 
+    fn hover_text(&self) -> Option<String> {
+        let position = self.position.get()?;
+        let height = profile_elevation(position.elevation_y?, self.elevation?);
+        Some(
+            match self.units.get() {
+                UnitSystem::Metric => rust_i18n::t!(
+                    "%{elevation} m · %{distance} km",
+                    elevation = crate::i18n::decimal(height, 0),
+                    distance = crate::i18n::decimal(position.distance_m / 1000.0, 1),
+                ),
+                UnitSystem::Imperial => rust_i18n::t!(
+                    "%{elevation} ft · %{distance} mi",
+                    elevation = crate::i18n::decimal(height / 0.3048, 0),
+                    distance = crate::i18n::decimal(position.distance_m / 1609.344, 1),
+                ),
+            }
+            .into_owned(),
+        )
+    }
+
     fn sync(&self) {
+        if let Some(profile) = self.profile.as_ref() {
+            let hovering = !self.play.is_active()
+                && self
+                    .last_pointer
+                    .get()
+                    .is_some_and(|(kind, _, _)| kind == PlotKind::Elevation);
+            profile
+                .frame
+                .set_tooltip_text(hovering.then(|| self.hover_text()).flatten().as_deref());
+        }
         let distance = distance(
             self.position.get().map_or(0.0, |p| p.distance_m),
             self.units.get(),

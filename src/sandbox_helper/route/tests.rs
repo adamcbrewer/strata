@@ -15,6 +15,13 @@ fn gpx_preserves_gaps_and_missing_zero_and_negative_altitude() {
     let preview = render::draw(&route, ModelPalette::default()).expect("render route");
     assert!((preview.distance_m - 111.195).abs() < 0.01);
     assert_eq!(preview.elevation, Some([-5.0, 0.0]));
+    for (sample, expected) in preview.samples.iter().zip([-5.0, 0.0]) {
+        let height = crate::services::route_preview::profile_elevation(
+            sample.elevation_y.expect("recorded height"),
+            preview.elevation.expect("elevation range"),
+        );
+        assert!((height - expected).abs() < 0.001);
+    }
     assert!(
         RoutePreview::from_json(&serde_json::to_vec(&preview).expect("serialize preview")).is_ok()
     );
@@ -154,6 +161,7 @@ fn fit_decodes_coordinates_prefers_enhanced_altitude_and_preserves_gaps() {
     let route = parse(&compressed, RouteFormat::Fit).expect("parse compressed FIT records");
     assert_eq!(route.segments.len(), 1);
     assert_eq!(route.points, 2);
+    assert_eq!(route.duration_seconds(), Some(1));
     assert!((geometry::prepare(&route).distance_m - 111.2).abs() < 0.1);
 }
 
@@ -269,7 +277,7 @@ fn interaction_samples_preserve_gaps_and_reject_invalid_renderer_coordinates() {
     assert!(preview.samples[2].starts_segment);
     assert_eq!(preview.samples[1].distance_m, preview.samples[2].distance_m);
     assert!(preview.samples[2].elevation_y.is_none());
-    for invalid in 0..7 {
+    for invalid in 0..9 {
         let mut changed = preview.clone();
         match invalid {
             0 => changed.samples[0].position[0] = -1.0,
@@ -285,6 +293,8 @@ fn interaction_samples_preserve_gaps_and_reject_invalid_renderer_coordinates() {
                     .encode_png()
                     .expect("encode tiny route image")
             }
+            7 => changed.duration_seconds = Some(u64::MAX),
+            8 => changed.duration_seconds = Some(0),
             _ => {
                 changed.profile = Some(
                     resvg::tiny_skia::Pixmap::new(1, 1)
@@ -300,5 +310,41 @@ fn interaction_samples_preserve_gaps_and_reject_invalid_renderer_coordinates() {
             )
             .is_err()
         );
+    }
+}
+
+#[test]
+fn route_elapsed_time_uses_recorded_timestamps_without_requiring_them() {
+    for (first, last, expected) in [
+        ("2026-10-24T10:00:00Z", "2026-10-24T11:01:02Z", Some(3662)),
+        (
+            "2026-10-24T10:00:00+01:00",
+            "2026-10-24T10:00:30Z",
+            Some(3630),
+        ),
+        ("not a time", "2026-10-24T10:00:30Z", None),
+        ("", "", None),
+        ("2026-10-24T10:00:00Z", "2026-10-24T10:00:00Z", None),
+    ] {
+        let gpx = format!(
+            r#"<gpx><metadata><time>2000-01-01T00:00:00Z</time></metadata><trk><trkseg><trkpt lat="0" lon="0"><time>{first}</time></trkpt></trkseg><trkseg><trkpt lat="0" lon="1"><time>{last}</time><extensions><time>2099-01-01T00:00:00Z</time></extensions></trkpt></trkseg></trk></gpx>"#
+        );
+        let kml = format!(
+            r#"<kml xmlns:gx="http://www.google.com/kml/ext/2.2"><Placemark><TimeStamp><when>2000-01-01T00:00:00Z</when></TimeStamp><gx:Track><when>{first}</when><when>{last}</when><gx:coord>0 0 0</gx:coord><gx:coord>1 0 0</gx:coord></gx:Track></Placemark></kml>"#
+        );
+        for (xml, format) in [(gpx, RouteFormat::Gpx), (kml, RouteFormat::Kml)] {
+            let route = parse(xml.as_bytes(), format).expect("parse timed route");
+            let preview =
+                render::draw(&route, ModelPalette::default()).expect("render timed route");
+            assert_eq!(
+                preview.duration_seconds, expected,
+                "{format:?}: {first}, {last}"
+            );
+            assert_eq!(preview.points, 2);
+            assert!(
+                RoutePreview::from_json(&serde_json::to_vec(&preview).expect("serialize preview"))
+                    .is_ok()
+            );
+        }
     }
 }

@@ -8,7 +8,7 @@ pub(crate) const MAX_ROUTE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub(crate) const MAX_ROUTE_POINTS: usize = 250_000;
 pub(crate) const ROUTE_WIDTH: u32 = 800;
 pub(crate) const ROUTE_HEIGHT: u32 = 600;
-pub(crate) const PROFILE_HEIGHT: u32 = 140;
+pub(crate) const PROFILE_HEIGHT: u32 = 70;
 pub(crate) const INVALID_ROUTE: &str =
     "This route file is invalid or contains no supported coordinates.";
 
@@ -55,6 +55,7 @@ pub struct RoutePreview {
     pub png: Vec<u8>,
     pub profile: Option<Vec<u8>>,
     pub distance_m: f64,
+    pub duration_seconds: Option<u64>,
     pub elevation: Option<[f64; 2]>,
     pub points: usize,
     pub samples: Vec<RouteSample>,
@@ -118,6 +119,9 @@ impl RoutePreview {
                 .as_ref()
                 .is_some_and(|png| !valid_png(png, PROFILE_HEIGHT))
             || result.profile.is_some() != result.elevation.is_some()
+            || result
+                .duration_seconds
+                .is_some_and(|seconds| seconds == 0 || seconds > i64::MAX as u64 / 1_000_000)
             || !result.distance_m.is_finite()
             || !(0.0..=MAX_ROUTE_POINTS as f64 * 21_000_000.0).contains(&result.distance_m)
             || !(1..=MAX_ROUTE_POINTS).contains(&result.points)
@@ -146,4 +150,9 @@ pub(crate) fn profile_x(distance_m: f64, total_m: f64) -> f64 {
 
 pub(crate) fn profile_distance(x: f64, total_m: f64) -> f64 {
     ((x - 2.0) / (f64::from(ROUTE_WIDTH) - 4.0)).clamp(0.0, 1.0) * total_m
+}
+
+pub(crate) fn profile_elevation(y: f32, [low, high]: [f64; 2]) -> f64 {
+    let height = f64::from(PROFILE_HEIGHT);
+    low + ((height - 4.0 - f64::from(y)) / (height - 8.0)).clamp(0.0, 1.0) * (high - low)
 }

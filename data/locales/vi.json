@@ -1506,5 +1506,7 @@
   "Distance and elevation in route previews.": "Khoảng cách và độ cao trong bản xem trước tuyến đường.",
   "settings_keywords.units": "hệ mét hệ Anh kilômét dặm mét foot khoảng cách độ cao tuyến đường gpx fit kml",
   "%{distance} mi": "%{distance} dặm",
-  "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft"
+  "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft",
+  "%{elevation} m · %{distance} km": "%{elevation} m · %{distance} km",
+  "%{elevation} ft · %{distance} mi": "%{elevation} ft · %{distance} dặm"
 }

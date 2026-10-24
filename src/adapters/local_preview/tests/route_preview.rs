@@ -73,6 +73,7 @@ fn route_requests_bypass_text_and_cache_by_palette() {
                         .expect("encode route image"),
                     profile: None,
                     distance_m: 1000.0,
+                    duration_seconds: None,
                     elevation: None,
                     points: 2,
                     samples: vec![

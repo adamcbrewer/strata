@@ -26,9 +26,23 @@ struct Route {
     segments: Vec<Vec<Point>>,
     points: usize,
     new_segment: bool,
+    timestamps: Option<[i64; 2]>,
 }
 
 impl Route {
+    fn record_timestamp(&mut self, timestamp: i64) {
+        let [first, last] = self.timestamps.get_or_insert([timestamp, timestamp]);
+        *first = (*first).min(timestamp);
+        *last = (*last).max(timestamp);
+    }
+
+    fn duration_seconds(&self) -> Option<u64> {
+        let [first, last] = self.timestamps?;
+        u64::try_from(last.checked_sub(first)?)
+            .ok()
+            .filter(|seconds| *seconds > 0)
+    }
+
     fn split(&mut self) {
         self.new_segment = true;
     }

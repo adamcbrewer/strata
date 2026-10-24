@@ -101,6 +101,12 @@ pub(super) fn parse(bytes: &[u8], format: RouteFormat) -> Result<Route, String> 
                         if let Some(point) = point.as_mut() {
                             point.elevation = text.trim().parse().ok().and_then(elevation);
                         }
+                    } else if name == b"time"
+                        && stack
+                            .split_last()
+                            .is_some_and(|(point, parents)| gpx_point(parents, point))
+                    {
+                        record_timestamp(&mut route, &text);
                     } else if gpx_point(&stack, &name) {
                         route.push(point.take())?;
                         if name == b"wpt" {
@@ -118,6 +124,8 @@ pub(super) fn parse(bytes: &[u8], format: RouteFormat) -> Result<Route, String> 
                     }
                 } else if name == b"coord" && parent == Some(b"Track") {
                     route.push(coordinate(text.split_whitespace()))?;
+                } else if name == b"when" && parent == Some(b"Track") {
+                    record_timestamp(&mut route, &text);
                 } else if name == b"altitudeMode"
                     && parent.is_some_and(|p| {
                         matches!(p, b"LineString" | b"Point" | b"Track" | b"MultiTrack")
@@ -224,4 +232,10 @@ fn coordinate<'a>(mut values: impl Iterator<Item = &'a str>) -> Option<Point> {
         lon,
         elevation,
     })
+}
+
+fn record_timestamp(route: &mut Route, text: &str) {
+    if let Ok(time) = gtk::glib::DateTime::from_iso8601(text.trim(), None) {
+        route.record_timestamp(time.to_unix());
+    }
 }

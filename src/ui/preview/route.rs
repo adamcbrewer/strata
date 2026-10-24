@@ -6,7 +6,7 @@ mod position;
 
 pub(super) use player::RoutePlayer;
 
-use super::{PreviewState, components, player_layout};
+use super::{ListingPosition, MediaFamily, PreviewState, components, player_layout};
 use crate::services::route_preview::{RouteFormat, RoutePreview};
 use crate::ui::preferences::{PreferenceManager, UnitSystem};
 use gtk::{glib, prelude::*};
@@ -57,9 +57,21 @@ impl PreviewState {
             .profile
             .map(|png| Plot::new(png, PlotKind::Elevation))
             .transpose()?;
-        let player = RoutePlayer::new(route, profile_plot, preview.samples, preview.distance_m);
+        let player = RoutePlayer::new(
+            route,
+            profile_plot,
+            preview.samples,
+            preview.distance_m,
+            preview.elevation,
+        );
         let header = components::DetailsHeader::new(None);
-        header.eyebrow.set_text(&crate::i18n::tr("Route"));
+        header.eyebrow.set_text(
+            &self
+                .listing_position(MediaFamily::Route)
+                .0
+                .map(ListingPosition::caption)
+                .unwrap_or_default(),
+        );
         let badges = components::badge_row();
         if let Some(entry) = self.current.borrow().as_ref() {
             header.title.set_text(&entry.display_name);
@@ -79,10 +91,16 @@ impl PreviewState {
             },
         );
         badges.append(&distance_badge);
-        badges.append(&crate::ui::settings::unit_system_control(&manager));
+        if let Some(seconds) = preview.duration_seconds {
+            badges.append(&components::badge(&super::fmt_time(
+                seconds as i64 * 1_000_000,
+            )));
+        }
+        header.root.append(&badges);
         let profile =
             if let (Some(plot), Some([low, high])) = (player.profile.as_ref(), preview.elevation) {
                 let section = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                section.set_margin_bottom(8);
                 let labels = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 let label = components::label("preview-media-time");
                 label.set_text(&crate::i18n::tr("Elevation"));
@@ -100,7 +118,7 @@ impl PreviewState {
                 labels.append(&label);
                 labels.append(&range);
                 section.append(&labels);
-                plot.frame.set_size_request(-1, 90);
+                plot.frame.set_size_request(-1, 45);
                 section.append(&plot.frame);
                 Some(section)
             } else {
@@ -110,7 +128,7 @@ impl PreviewState {
         let (root, layout) = player_layout::section(player_layout::Areas {
             content: player.route.frame.upcast_ref(),
             details: header.root.upcast_ref(),
-            badges: Some(badges.upcast_ref()),
+            badges: None,
             timeline: profile.as_ref().map(|p| p.upcast_ref()),
             controls: Some(controls.upcast_ref()),
         });

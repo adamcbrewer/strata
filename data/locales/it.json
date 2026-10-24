@@ -1506,5 +1506,7 @@
   "Distance and elevation in route previews.": "Distanza e altitudine nelle anteprime dei percorsi.",
   "settings_keywords.units": "metrico imperiale chilometri miglia metri piedi distanza altitudine percorso gpx fit kml",
   "%{distance} mi": "%{distance} mi",
-  "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft"
+  "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft",
+  "%{elevation} m · %{distance} km": "%{elevation} m · %{distance} km",
+  "%{elevation} ft · %{distance} mi": "%{elevation} ft · %{distance} mi"
 }

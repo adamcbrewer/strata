@@ -22,25 +22,30 @@ fn ready_with_elevation(provider: &Provider, index: usize, elevation: Option<[f6
                     .encode_png()
                     .expect("encode route image"),
                 profile: elevation.map(|_| {
-                    resvg::tiny_skia::Pixmap::new(800, 140)
-                        .expect("allocate elevation image")
-                        .encode_png()
-                        .expect("encode elevation image")
+                    resvg::tiny_skia::Pixmap::new(
+                        800,
+                        crate::services::route_preview::PROFILE_HEIGHT,
+                    )
+                    .expect("allocate elevation image")
+                    .encode_png()
+                    .expect("encode elevation image")
                 }),
                 elevation,
                 distance_m: 1000.0,
+                duration_seconds: None,
                 points: 2,
                 samples: vec![
                     RouteSample {
                         position: [24.0, 300.0],
                         distance_m: 0.0,
-                        elevation_y: None,
+                        elevation_y: elevation
+                            .map(|_| crate::services::route_preview::PROFILE_HEIGHT as f32 - 4.0),
                         starts_segment: true,
                     },
                     RouteSample {
                         position: [776.0, 300.0],
                         distance_m: 1000.0,
-                        elevation_y: None,
+                        elevation_y: elevation.map(|_| 4.0),
                         starts_segment: false,
                     },
                 ],
@@ -164,7 +169,14 @@ fn route_units_load_before_settings_and_update_across_drawers_and_files() {
                     .distance_m,
                 500.0
             );
+            player.hover(PlotKind::Elevation, 10.0, 20.0);
+            assert!(tooltips(first.widget().upcast_ref()).contains(&"156 ft · 0.3 mi".into()));
             first.media_key(MediaCommand::PlayPause);
+            assert!(
+                !tooltips(first.widget().upcast_ref())
+                    .iter()
+                    .any(|text| text.contains("156 ft"))
+            );
             manager.set_unit_system(UnitSystem::Metric);
             assert!(player.play.is_active(), "unit changes preserve playback");
             assert_eq!(
@@ -180,6 +192,8 @@ fn route_units_load_before_settings_and_update_across_drawers_and_files() {
             assert!(text.contains(&"1.0 km".into()));
             assert!(text.contains(&"-5–100 m".into()));
             assert!(labels(second.widget().upcast_ref()).contains(&"0–30 m".into()));
+            player.hover(PlotKind::Elevation, 11.0, 20.0);
+            assert!(tooltips(first.widget().upcast_ref()).contains(&"48 m · 0.5 km".into()));
             first.show(entry("third.kml"), None);
             ready_with_elevation(&provider, 2, Some([0.0, 100.0]));
             assert!(labels(first.widget().upcast_ref()).contains(&"0–100 m".into()));
@@ -252,6 +266,42 @@ fn suspended_route_reloads_with_the_latest_palette_on_resume() {
             );
             assert_ne!(pending[1].request.model_palette, old_palette);
             window.destroy();
+        },
+    );
+}
+
+fn tooltips(widget: &gtk::Widget) -> Vec<String> {
+    let mut result: Vec<_> = widget
+        .tooltip_text()
+        .map(|text| text.to_string())
+        .into_iter()
+        .collect();
+    let mut child = widget.first_child();
+    while let Some(widget) = child {
+        result.extend(tooltips(&widget));
+        child = widget.next_sibling();
+    }
+    result
+}
+
+#[test]
+fn route_caption_counts_supported_files_in_listing_order() {
+    crate::test_support::gtk_test(
+        "ui::preview::tests::route::route_caption_counts_supported_files_in_listing_order",
+        || {
+            let (_directory, view) =
+                super::video::sorted_listing(&["a.gpx", "b.fit", "c.kml", "notes.txt"]);
+            let browser = view.browser();
+            let provider = Rc::new(Provider::default());
+            let drawer = PreviewDrawer::new(provider.clone(), false);
+            drawer.state.keyboard_view.replace(Some(view.downgrade()));
+            for index in 0..3 {
+                drawer.show(browser.entry_at(0, index).expect("route entry"), Some(0));
+                ready(&provider, index);
+                let text = labels(drawer.widget().upcast_ref());
+                assert!(text.contains(&format!("{} of 3 in folder", index + 1)));
+                assert!(!text.contains(&"Route".into()));
+            }
         },
     );
 }

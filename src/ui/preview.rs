@@ -1820,7 +1820,7 @@ impl PreviewState {
                         self.render_video(preview.entry, source, &media, &preferences);
                         None
                     }
-                    None => {
+                    None | Some(MediaFamily::Route) => {
                         let (overlay, center_play) = self.build_media_view(&media);
                         let section = media_layout::section(&overlay, &media);
                         self.content.append(&section);
@@ -1849,7 +1849,7 @@ impl PreviewState {
                                     audio.view.start_silently();
                                 }
                             }
-                            None => {}
+                            None | Some(MediaFamily::Route) => {}
                         }
                     }
                     self.sizing.play_or_defer(&media);
@@ -3102,7 +3102,7 @@ impl PreviewState {
         let retained = match keep {
             Some(MediaFamily::Audio) => audio.is_some(),
             Some(MediaFamily::Video) => video.is_some(),
-            None => false,
+            None | Some(MediaFamily::Route) => false,
         };
         if !retained {
             self.media_toggle_mute.replace(None);
@@ -3440,6 +3440,7 @@ impl ListingPosition {
 enum MediaFamily {
     Audio,
     Video,
+    Route,
 }
 
 fn media_family(content_type: &str) -> Option<MediaFamily> {
@@ -3464,6 +3465,9 @@ fn entry_family(entry: &FileEntry) -> Option<MediaFamily> {
         .and_then(|extension| extension.to_str())
         .filter(|_| !entry.is_directory())
         .map(str::to_ascii_lowercase)?;
+    if crate::services::route_preview::RouteFormat::for_name(&entry.native_name).is_some() {
+        return Some(MediaFamily::Route);
+    }
     if entry.duration_seconds == MetadataValue::Unavailable {
         return None;
     }

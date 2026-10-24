@@ -238,22 +238,28 @@ GTK. Thumbnail output remains at most 256×256, in the image's original colors.
 Quick Preview accepts local GPX, FIT and KML files, including file symlinks.
 The one-shot `preview-route` helper parses and draws the route without network,
 map tiles or external resources. The drawer and file chooser use the shared media
-layout, filename header and format/distance badges. An elevation line is
-shown against cumulative distance when a connected pair has recorded altitude;
+layout, folder-position caption, filename header and compact format/distance badges.
+A duration badge shows elapsed time between the earliest and latest recorded
+timestamps, including pauses, when at least two distinct timestamps are available.
+An elevation line is shown against cumulative distance when a connected pair has
+recorded altitude;
 otherwise that section is omitted. The shared media play/pause shortcuts animate
 route and elevation markers over 30 seconds at a steady distance-based pace.
 Hovering either graph pauses playback and synchronizes both markers; playback
 resumes only on an explicit play action. Seeking uses the media shortcuts too.
-The timer stops when the preview is hidden, closed or replaced.
+The timer stops when the preview is hidden, closed or replaced. Hovering the
+elevation profile shows its height and distance in a tooltip when altitude is
+available.
 
 The helper prepares a single projected trace with cumulative distance, segment
 boundaries and optional elevation coordinates. Both PNGs are drawn from this
 trace, and the same samples drive hover and playback in the UI. The plot owns
 coordinate transforms, picking and marker drawing; the player owns position and
 the playback timer. Host validation requires the PNG dimensions to match the
-trace’s coordinate space (800×600 for the route, 800×140 for elevation).
-The Metric / Imperial selector shares the saved **Settings → General → Units**
-preference. Distances use kilometres or miles; elevation uses metres or feet.
+trace’s coordinate space (800×600 for the route, 800×70 for elevation).
+Units follow the saved **Settings → General → Units** preference; the preview
+has no separate unit selector. Distances use kilometres or miles; elevation uses
+metres or feet.
 Changing units updates labels in place without interrupting playback.
 
 GPX tracks, route points and isolated waypoints preserve segment boundaries.
@@ -274,7 +280,7 @@ change distance or altitude statistics. Distances use a spherical Earth model.
 The helper caps input at 32 MiB, aggregate valid points at 250,000, XML nesting
 at 64 and FIT objects at 1,000,000. Existing CPU, address-space, timeout,
 cancellation and shared heavy-preview permit limits still apply. Output is bounded
-JSON containing an 800×600 route PNG, an optional 800×140 elevation PNG and small
+JSON containing an 800×600 route PNG, an optional 800×70 elevation PNG and small
 numeric metadata, plus at most 250,000 projected drawing positions with cumulative
 distances, optional elevation heights and segment boundaries for interaction.
 The host validates PNG dimensions, sample counts, finite drawing bounds, monotonic

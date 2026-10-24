@@ -67,6 +67,9 @@ pub(super) fn parse(mut bytes: &[u8]) -> Result<Route, String> {
                         .map_err(|_| INVALID_ROUTE)?;
                     match record.kind() {
                         MesgNum::Record => {
+                            if let Some(Value::Timestamp(time)) = field(&record, "timestamp") {
+                                route.record_timestamp(time.timestamp());
+                            }
                             route.push(point)?;
                         }
                         MesgNum::Event
