@@ -1507,6 +1507,6 @@
   "settings_keywords.units": "métrique impérial kilomètres miles mètres pieds distance altitude parcours gpx fit kml",
   "%{distance} mi": "%{distance} mi",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} pi",
-  "%{elevation} m · %{distance} km": "%{elevation} m · %{distance} km",
-  "%{elevation} ft · %{distance} mi": "%{elevation} pi · %{distance} mi"
+  "%{elevation} m": "%{elevation} m",
+  "%{elevation} ft": "%{elevation} pi"
 }

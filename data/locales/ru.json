@@ -1507,6 +1507,6 @@
   "settings_keywords.units": "метрические имперские километры мили метры футы расстояние высота маршрут gpx fit kml",
   "%{distance} mi": "%{distance} мили",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} фут.",
-  "%{elevation} m · %{distance} km": "%{elevation} м · %{distance} км",
-  "%{elevation} ft · %{distance} mi": "%{elevation} фут. · %{distance} мили"
+  "%{elevation} m": "%{elevation} м",
+  "%{elevation} ft": "%{elevation} фут."
 }

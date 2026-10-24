@@ -244,12 +244,13 @@ timestamps, including pauses, when at least two distinct timestamps are availabl
 An elevation line is shown against cumulative distance when a connected pair has
 recorded altitude;
 otherwise that section is omitted. The shared media play/pause shortcuts animate
-route and elevation markers over 30 seconds at a steady distance-based pace.
+route and elevation markers over 15 seconds at a steady distance-based pace.
 Hovering either graph pauses playback and synchronizes both markers; playback
 resumes only on an explicit play action. Seeking uses the media shortcuts too.
-The timer stops when the preview is hidden, closed or replaced. Hovering the
-elevation profile shows its height and distance in a tooltip when altitude is
-available.
+The timer stops when the preview is hidden, closed or replaced. The elevation
+header shows the current marker height during playback, hovering and seeking,
+when altitude is available. Playback uses calculated ground distance between GPS
+points, not screen length or recorded timestamps.
 
 The helper prepares a single projected trace with cumulative distance, segment
 boundaries and optional elevation coordinates. Both PNGs are drawn from this

@@ -1507,6 +1507,6 @@
   "settings_keywords.units": "メートル法 ヤード・ポンド法 キロメートル マイル メートル フィート 距離 標高 ルート gpx fit kml",
   "%{distance} mi": "%{distance} マイル",
   "%{minimum}–%{maximum} ft": "%{minimum}～%{maximum} フィート",
-  "%{elevation} m · %{distance} km": "%{elevation} m · %{distance} km",
-  "%{elevation} ft · %{distance} mi": "%{elevation} フィート · %{distance} マイル"
+  "%{elevation} m": "%{elevation} m",
+  "%{elevation} ft": "%{elevation} フィート"
 }

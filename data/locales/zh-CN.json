@@ -1507,6 +1507,6 @@
   "settings_keywords.units": "公制 英制 千米 英里 米 英尺 距离 海拔 路线 gpx fit kml",
   "%{distance} mi": "%{distance} 英里",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} 英尺",
-  "%{elevation} m · %{distance} km": "%{elevation} m · %{distance} km",
-  "%{elevation} ft · %{distance} mi": "%{elevation} 英尺 · %{distance} 英里"
+  "%{elevation} m": "%{elevation} m",
+  "%{elevation} ft": "%{elevation} 英尺"
 }

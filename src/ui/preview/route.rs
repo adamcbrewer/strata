@@ -104,8 +104,9 @@ impl PreviewState {
                 let labels = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 let label = components::label("preview-media-time");
                 label.set_text(&crate::i18n::tr("Elevation"));
-                label.set_hexpand(true);
                 let range = components::label("preview-media-time");
+                range.set_hexpand(true);
+                range.set_xalign(1.0);
                 manager.bind_preference(
                     &range,
                     PreferenceManager::unit_system,
@@ -116,6 +117,7 @@ impl PreviewState {
                     },
                 );
                 labels.append(&label);
+                labels.append(&player.elevation_label);
                 labels.append(&range);
                 section.append(&labels);
                 plot.frame.set_size_request(-1, 45);

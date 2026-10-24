@@ -1507,6 +1507,6 @@
   "settings_keywords.units": "hệ mét hệ Anh kilômét dặm mét foot khoảng cách độ cao tuyến đường gpx fit kml",
   "%{distance} mi": "%{distance} dặm",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum} ft",
-  "%{elevation} m · %{distance} km": "%{elevation} m · %{distance} km",
-  "%{elevation} ft · %{distance} mi": "%{elevation} ft · %{distance} dặm"
+  "%{elevation} m": "%{elevation} m",
+  "%{elevation} ft": "%{elevation} ft"
 }

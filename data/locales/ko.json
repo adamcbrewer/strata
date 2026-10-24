@@ -1507,6 +1507,6 @@
   "settings_keywords.units": "미터법 야드파운드법 킬로미터 마일 미터 피트 거리 고도 경로 gpx fit kml",
   "%{distance} mi": "%{distance}마일",
   "%{minimum}–%{maximum} ft": "%{minimum}–%{maximum}피트",
-  "%{elevation} m · %{distance} km": "%{elevation} m · %{distance} km",
-  "%{elevation} ft · %{distance} mi": "%{elevation} 피트 · %{distance} 마일"
+  "%{elevation} m": "%{elevation} m",
+  "%{elevation} ft": "%{elevation} 피트"
 }

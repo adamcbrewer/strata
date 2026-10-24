@@ -154,7 +154,7 @@ fn route_units_load_before_settings_and_update_across_drawers_and_files() {
             assert!(labels(second.widget().upcast_ref()).contains(&"0–100 ft".into()));
             assert!(labels(first.widget().upcast_ref()).contains(&"0.6 mi".into()));
             first.media_key(MediaCommand::Seek(MediaSeek::End));
-            first.media_key(MediaCommand::Seek(MediaSeek::By(-15_000_000)));
+            first.media_key(MediaCommand::Seek(MediaSeek::By(-7_500_000)));
             let player = first
                 .state
                 .route
@@ -170,13 +170,9 @@ fn route_units_load_before_settings_and_update_across_drawers_and_files() {
                 500.0
             );
             player.hover(PlotKind::Elevation, 10.0, 20.0);
-            assert!(tooltips(first.widget().upcast_ref()).contains(&"156 ft · 0.3 mi".into()));
+            assert!(labels(first.widget().upcast_ref()).contains(&"156 ft".into()));
             first.media_key(MediaCommand::PlayPause);
-            assert!(
-                !tooltips(first.widget().upcast_ref())
-                    .iter()
-                    .any(|text| text.contains("156 ft"))
-            );
+            assert!(labels(first.widget().upcast_ref()).contains(&"156 ft".into()));
             manager.set_unit_system(UnitSystem::Metric);
             assert!(player.play.is_active(), "unit changes preserve playback");
             assert_eq!(
@@ -193,7 +189,7 @@ fn route_units_load_before_settings_and_update_across_drawers_and_files() {
             assert!(text.contains(&"-5–100 m".into()));
             assert!(labels(second.widget().upcast_ref()).contains(&"0–30 m".into()));
             player.hover(PlotKind::Elevation, 11.0, 20.0);
-            assert!(tooltips(first.widget().upcast_ref()).contains(&"48 m · 0.5 km".into()));
+            assert!(labels(first.widget().upcast_ref()).contains(&"48 m".into()));
             first.show(entry("third.kml"), None);
             ready_with_elevation(&provider, 2, Some([0.0, 100.0]));
             assert!(labels(first.widget().upcast_ref()).contains(&"0–100 m".into()));
@@ -268,20 +264,6 @@ fn suspended_route_reloads_with_the_latest_palette_on_resume() {
             window.destroy();
         },
     );
-}
-
-fn tooltips(widget: &gtk::Widget) -> Vec<String> {
-    let mut result: Vec<_> = widget
-        .tooltip_text()
-        .map(|text| text.to_string())
-        .into_iter()
-        .collect();
-    let mut child = widget.first_child();
-    while let Some(widget) = child {
-        result.extend(tooltips(&widget));
-        child = widget.next_sibling();
-    }
-    result
 }
 
 #[test]
