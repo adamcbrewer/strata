@@ -99,8 +99,8 @@ impl PreviewState {
         header.root.append(&badges);
         let profile =
             if let (Some(plot), Some([low, high])) = (player.profile.as_ref(), preview.elevation) {
-                let section = gtk::Box::new(gtk::Orientation::Vertical, 4);
-                section.set_margin_bottom(8);
+                let section = gtk::Box::new(gtk::Orientation::Vertical, components::GAP);
+                section.set_margin_bottom(components::GAP - components::CONTROLS_GAP);
                 let labels = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 let label = components::label("preview-media-time");
                 label.set_text(&crate::i18n::tr("Elevation"));

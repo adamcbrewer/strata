@@ -168,7 +168,8 @@ impl RoutePlayer {
         let Some(plot) = self.plot(kind) else {
             return;
         };
-        if let Some(position) = plot.pick(&self.samples, self.distance_m, x, y) {
+        if let Some(position) = plot.pick(&self.samples, self.distance_m, self.position.get(), x, y)
+        {
             self.position.set(Some(position));
         }
         self.sync();

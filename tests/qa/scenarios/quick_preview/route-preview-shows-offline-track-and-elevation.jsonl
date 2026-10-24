@@ -1,4 +1,4 @@
-{"scenario":"route-preview-shows-offline-track-and-elevation","modes":["list"],"prefs":{"single_click_previews":false},"tree":{"route.gpx":"<gpx><trk><trkseg><trkpt lat=\"&#53;1\" lon=\"&#x30;\"><ele>10</ele><time>2026-10-24T10:00:00Z</time></trkpt><trkpt lat=\"51.002\" lon=\"0.003\"><ele>30</ele></trkpt><trkpt lat=\"51.004\" lon=\"0.001\"><ele>20</ele><time>2026-10-24T20:17:50Z</time></trkpt></trkseg></trk></gpx>","no-altitude.gpx":"<gpx><rte><rtept lat=\"0\" lon=\"0\"/><rtept lat=\"0\" lon=\"0.02\"/></rte></gpx>","route.kml":"<kml><Placemark><LineString><altitudeMode>absolute</altitudeMode><coordinates>0,0,-5 0.01,0,0</coordinates></LineString></Placemark></kml>","broken.gpx":"<gpx><trk>","notes.txt":"ordinary text preview"},"cost":{"list":10.0}}
+{"scenario":"route-preview-shows-offline-track-and-elevation","modes":["list"],"prefs":{"single_click_previews":false},"tree":{"route.gpx":"<gpx><trk><trkseg><trkpt lat=\"&#53;1\" lon=\"&#x30;\"><ele>10</ele><time>2026-10-24T10:00:00Z</time></trkpt><trkpt lat=\"51.002\" lon=\"0.003\"><ele>30</ele></trkpt><trkpt lat=\"51.004\" lon=\"0.001\"><ele>20</ele><time>2026-10-24T20:17:50Z</time></trkpt></trkseg></trk></gpx>","no-altitude.gpx":"<gpx><rte><rtept lat=\"0\" lon=\"0\"/><rtept lat=\"0\" lon=\"0.02\"/></rte></gpx>","route.kml":"<kml><Placemark><MultiGeometry><LineString><altitudeMode>absolute</altitudeMode><coordinates>0,0,-5 0.01,0,0</coordinates></LineString><LineString><altitudeMode>absolute</altitudeMode><coordinates>0.01,0.00001,10 0,0.00001,20</coordinates></LineString></MultiGeometry></Placemark></kml>","broken.gpx":"<gpx><trk>","notes.txt":"ordinary text preview"},"cost":{"list":10.0}}
 {"fs":{"path":"route.fit","hex":"0c200000250000002e464954400000140003000485010485020284000000000000000000c40900000000009a2e0000f6091597"}}
 {"wait":{"entries":{"contains":["route.gpx","route.fit","route.kml","no-altitude.gpx","broken.gpx","notes.txt"]}},"message":"route fixtures listed"}
 {"select":{"entry":"route.gpx"}}
@@ -32,14 +32,20 @@
 {"wait":{"state":{"target":{"role":"toggle button","name":"Play or pause","within":{"preview":true}},"pressed":false}},"message":"hover pauses a route without elevation"}
 {"select":{"entry":"route.kml"}}
 {"wait":{"selected":["route.kml"]},"message":"selection changed to route.kml"}
-{"wait":{"all":[{"preview":"-5–0 m"},{"present":{"role":"image","name":"Route preview","within":{"preview":true}}}]},"message":"route.kml rendered"}
+{"wait":{"all":[{"preview":"-5–20 m"},{"present":{"role":"image","name":"Route preview","within":{"preview":true}}}]},"message":"route.kml rendered"}
+{"move":{"role":"image","name":"Elevation profile","within":{"preview":true}},"at":["75%","50%"]}
+{"wait":{"all":[{"preview":"15 m"},{"description":{"target":{"role":"image","name":"Route preview","within":{"preview":true}},"text":"1.7 km"}}]},"message":"profile selects the return pass"}
+{"move":{"role":"image","name":"Route preview","within":{"preview":true}},"at":["50%","50%"]}
+{"wait":{"all":[{"preview":"15 m"},{"description":{"target":{"role":"image","name":"Elevation profile","within":{"preview":true}},"text":"1.7 km"}}]},"message":"hovering overlapping route lines keeps the selected return pass"}
+{"move":{"role":"image","name":"Route preview","within":{"preview":true}},"at":["55%","50%"]}
+{"wait":{"description":{"target":{"role":"image","name":"Elevation profile","within":{"preview":true}},"text":"1.6 km"}},"message":"route hover progresses along the same pass"}
 {"activate":{"role":"button","name":"Settings"}}
 {"wait":{"present":{"role":"button","name":"Close settings"}},"message":"settings opened"}
 {"click":{"role":"toggle button","name":"Imperial"}}
 {"wait":{"pref":{"key":"unit_system","value":"imperial"}},"message":"imperial units saved"}
 {"activate":{"role":"button","name":"Close settings"}}
 {"wait":{"absent":{"role":"button","name":"Close settings"}},"message":"settings closed"}
-{"wait":{"all":[{"preview":"-16–0 ft"},{"pref":{"key":"unit_system","value":"imperial"}}]},"message":"Settings converts negative elevation and saves imperial units"}
+{"wait":{"all":[{"preview":"-16–66 ft"},{"pref":{"key":"unit_system","value":"imperial"}}]},"message":"Settings converts negative elevation and saves imperial units"}
 {"expect":{"present":{"role":"image","name":"Elevation profile","within":{"preview":true}}},"message":"profile presence matches recorded altitude"}
 {"select":{"entry":"route.fit"}}
 {"wait":{"selected":["route.fit"]},"message":"selection changed to route.fit"}

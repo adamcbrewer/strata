@@ -42,10 +42,47 @@ pub(super) fn at_distance(samples: &[RouteSample], distance: f64) -> Option<Rout
     ))
 }
 
-pub(super) fn nearest(samples: &[RouteSample], point: [f64; 2]) -> Option<RouteSample> {
-    let mut closest = None;
-    let mut best = f64::INFINITY;
-    for (index, &a) in samples.iter().enumerate() {
+pub(super) fn nearest(
+    samples: &[RouteSample],
+    point: [f64; 2],
+    previous_m: Option<f64>,
+    tolerance: f64,
+) -> Option<RouteSample> {
+    let (mut closest, best, _) = projections(samples, point).min_by(|a, b| a.1.total_cmp(&b.1))?;
+    let Some(previous_m) = previous_m else {
+        return Some(closest);
+    };
+    let mut consider = |candidate: RouteSample| {
+        if (candidate.distance_m - previous_m).abs() < (closest.distance_m - previous_m).abs() {
+            closest = candidate;
+        }
+    };
+    let mut branch = None;
+    let mut branch_distance = f64::INFINITY;
+    // Keep nearby passes separate, but project freely along the selected pass.
+    for (candidate, distance, join_distance) in projections(samples, point) {
+        if join_distance > best + tolerance || distance > best + tolerance {
+            if let Some(candidate) = branch.take() {
+                consider(candidate);
+            }
+            branch_distance = f64::INFINITY;
+        }
+        if distance <= best + tolerance && distance < branch_distance {
+            branch = Some(candidate);
+            branch_distance = distance;
+        }
+    }
+    if let Some(candidate) = branch {
+        consider(candidate);
+    }
+    Some(closest)
+}
+
+fn projections(
+    samples: &[RouteSample],
+    point: [f64; 2],
+) -> impl Iterator<Item = (RouteSample, f64, f64)> + '_ {
+    samples.iter().enumerate().map(move |(index, &a)| {
         let candidate = match samples.get(index + 1).filter(|b| !b.starts_segment) {
             Some(&b) => {
                 let dx = f64::from(b.position[0] - a.position[0]);
@@ -64,12 +101,13 @@ pub(super) fn nearest(samples: &[RouteSample], point: [f64; 2]) -> Option<RouteS
         };
         let distance = (point[0] - f64::from(candidate.position[0]))
             .hypot(point[1] - f64::from(candidate.position[1]));
-        if distance < best {
-            best = distance;
-            closest = Some(candidate);
-        }
-    }
-    closest
+        let join_distance = if a.starts_segment {
+            f64::INFINITY
+        } else {
+            (point[0] - f64::from(a.position[0])).hypot(point[1] - f64::from(a.position[1]))
+        };
+        (candidate, distance, join_distance)
+    })
 }
 
 #[cfg(test)]

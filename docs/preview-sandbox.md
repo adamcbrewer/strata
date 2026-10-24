@@ -246,7 +246,9 @@ recorded altitude;
 otherwise that section is omitted. The shared media play/pause shortcuts animate
 route and elevation markers over 15 seconds at a steady distance-based pace.
 Hovering either graph pauses playback and synchronizes both markers; playback
-resumes only on an explicit play action. Seeking uses the media shortcuts too.
+resumes only on an explicit play action. When route passes overlap or nearly
+overlap, hovering prefers the pass nearest the current distance among hits within
+two screen pixels of the closest line. Seeking uses the media shortcuts too.
 The timer stops when the preview is hidden, closed or replaced. The elevation
 header shows the current marker height during playback, hovering and seeking,
 when altitude is available. Playback uses calculated ground distance between GPS

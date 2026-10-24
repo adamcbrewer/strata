@@ -77,6 +77,7 @@ impl Plot {
         &self,
         samples: &[RouteSample],
         total_m: f64,
+        previous: Option<RouteSample>,
         x: f64,
         y: f64,
     ) -> Option<RouteSample> {
@@ -92,7 +93,7 @@ impl Plot {
                 if (0.0..=f64::from(ROUTE_WIDTH)).contains(&x)
                     && (0.0..=f64::from(ROUTE_HEIGHT)).contains(&y) =>
             {
-                position::nearest(samples, [x, y])
+                position::nearest(samples, [x, y], previous.map(|p| p.distance_m), 2.0 / sx)
             }
             PlotKind::Route => None,
         }
@@ -126,10 +127,7 @@ impl Plot {
             )
         };
         color(colors.accent_bright);
-        context.arc(x, y, 4.5, 0.0, std::f64::consts::TAU);
-        let _ = context.fill_preserve();
-        color(colors.background);
-        context.set_line_width(2.0);
-        let _ = context.stroke();
+        context.arc(x, y, 3.5, 0.0, std::f64::consts::TAU);
+        let _ = context.fill();
     }
 }
