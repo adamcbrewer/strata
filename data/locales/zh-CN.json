@@ -1497,7 +1497,6 @@
   "Copy this route file locally before previewing it.": "请先将此路线文件复制到本机再预览。",
   "Elevation": "海拔",
   "Elevation profile": "海拔剖面",
-  "Route": "路线",
   "Route preview": "路线预览",
   "This route exceeds the 250,000 point preview limit.": "此路线超过了预览上限（250,000 个点）。",
   "This route file exceeds the 32 MiB preview limit.": "此路线文件超过了 32 MiB 的预览大小上限。",

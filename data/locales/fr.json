@@ -1497,7 +1497,6 @@
   "Copy this route file locally before previewing it.": "Copiez ce fichier d’itinéraire en local avant de le prévisualiser.",
   "Elevation": "Altitude",
   "Elevation profile": "Profil altimétrique",
-  "Route": "Itinéraire",
   "Route preview": "Aperçu de l’itinéraire",
   "This route exceeds the 250,000 point preview limit.": "Cet itinéraire dépasse la limite de 250 000 points pour l’aperçu.",
   "This route file exceeds the 32 MiB preview limit.": "Ce fichier d’itinéraire dépasse la limite de 32 Mio pour l’aperçu.",

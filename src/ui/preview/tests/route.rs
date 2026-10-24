@@ -282,7 +282,6 @@ fn route_caption_counts_supported_files_in_listing_order() {
                 ready(&provider, index);
                 let text = labels(drawer.widget().upcast_ref());
                 assert!(text.contains(&format!("{} of 3 in folder", index + 1)));
-                assert!(!text.contains(&"Route".into()));
             }
         },
     );

@@ -1497,7 +1497,6 @@
   "Copy this route file locally before previewing it.": "プレビューする前に、このルートファイルをローカルにコピーしてください。",
   "Elevation": "標高",
   "Elevation profile": "標高プロファイル",
-  "Route": "ルート",
   "Route preview": "ルートのプレビュー",
   "This route exceeds the 250,000 point preview limit.": "このルートはプレビューの上限である250,000ポイントを超えています。",
   "This route file exceeds the 32 MiB preview limit.": "このルートファイルはプレビューの上限である32 MiBを超えています。",

@@ -1497,7 +1497,6 @@
   "Copy this route file locally before previewing it.": "Скопируйте этот файл маршрута на компьютер перед предпросмотром.",
   "Elevation": "Высота",
   "Elevation profile": "Профиль высоты",
-  "Route": "Маршрут",
   "Route preview": "Предпросмотр маршрута",
   "This route exceeds the 250,000 point preview limit.": "Этот маршрут превышает ограничение предпросмотра в 250 000 точек.",
   "This route file exceeds the 32 MiB preview limit.": "Этот файл маршрута превышает ограничение предпросмотра в 32 МиБ.",

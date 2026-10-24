@@ -1497,7 +1497,6 @@
   "Copy this route file locally before previewing it.": "미리보기 전에 이 경로 파일을 로컬로 복사하세요.",
   "Elevation": "고도",
   "Elevation profile": "고도 프로필",
-  "Route": "경로",
   "Route preview": "경로 미리보기",
   "This route exceeds the 250,000 point preview limit.": "이 경로는 미리보기 제한인 250,000개 지점을 초과합니다.",
   "This route file exceeds the 32 MiB preview limit.": "이 경로 파일은 미리보기 제한인 32 MiB를 초과합니다.",
