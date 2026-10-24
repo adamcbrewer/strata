@@ -12,8 +12,6 @@ mod remote;
 use futures_channel::oneshot;
 use gtk::{gio, glib, prelude::*};
 
-use crate::services::route_preview::{RouteFormat, RoutePreview, RouteRender};
-
 use crate::{
     adapters::{
         gio_close::Closing,
@@ -27,6 +25,7 @@ use crate::{
         document_kind, has_plain_text_extension, is_non_executable_extensionless_dotfile,
         layout_document, looks_like_text, normalize_preview_text, parse_document, read_head_sample,
         reconcile_with_sample,
+        route_preview::{RouteFormat, RoutePreview, RouteRender},
     },
 };
 
@@ -286,11 +285,13 @@ impl LocalPreviewProvider {
             let (mut content_type, uncertain) =
                 crate::services::guess_content_type(Path::new(&entry.native_name));
             let mut content = content_family(&content_type);
-            if crate::services::is_model(&entry.native_name) || RouteFormat::for_name(&entry.native_name).is_some() {
+            let sandbox_only = crate::services::is_model(&entry.native_name)
+                || RouteFormat::for_name(&entry.native_name).is_some();
+            if sandbox_only {
                 content = PreviewContent::Unsupported;
             }
 
-            if !crate::services::is_model(&entry.native_name) && RouteFormat::for_name(&entry.native_name).is_none()
+            if !sandbox_only
                 && matches!(content, PreviewContent::Unsupported)
             {
                 if gio::content_type_is_a(&content_type, "text/plain") {
@@ -307,7 +308,7 @@ impl LocalPreviewProvider {
                 }
             }
 
-            if !crate::services::is_model(&entry.native_name) && RouteFormat::for_name(&entry.native_name).is_none() && matches!(content, PreviewContent::Unsupported)
+            if !sandbox_only && matches!(content, PreviewContent::Unsupported)
                 && (uncertain || entry.native_name.is_empty())
             {
                 let file = gio_file_for_location(&entry.location);
@@ -352,7 +353,7 @@ impl LocalPreviewProvider {
             }
             let sample_is_text = sample.as_deref().map(looks_like_text);
             if let Some(sample) = &sample
-                && !crate::services::is_model(&entry.native_name) && RouteFormat::for_name(&entry.native_name).is_none()
+                && !sandbox_only
             {
                 reconcile_with_sample(&mut content_type, &mut content, sample);
             }

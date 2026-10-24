@@ -17,7 +17,7 @@ pub(super) struct Areas<'a> {
     pub(super) details: &'a gtk::Widget,
     pub(super) badges: Option<&'a gtk::Widget>,
     pub(super) timeline: Option<&'a gtk::Widget>,
-    pub(super) controls: Option<&'a gtk::Widget>,
+    pub(super) controls: &'a gtk::Widget,
 }
 
 #[derive(Default)]
@@ -69,7 +69,7 @@ pub(super) fn section(areas: Areas<'_>) -> (gtk::Box, PlayerLayout) {
     parts.details.set(Some(areas.details));
     parts.badges.set(areas.badges);
     parts.timeline.set(areas.timeline);
-    parts.controls.set(areas.controls);
+    parts.controls.set(Some(areas.controls));
     root.set_layout_manager(Some(layout.clone()));
     root.append(areas.content);
     root.append(areas.details);
@@ -79,9 +79,7 @@ pub(super) fn section(areas: Areas<'_>) -> (gtk::Box, PlayerLayout) {
     if let Some(timeline) = areas.timeline {
         root.append(timeline);
     }
-    if let Some(controls) = areas.controls {
-        root.append(controls);
-    }
+    root.append(areas.controls);
     (root, layout)
 }
 

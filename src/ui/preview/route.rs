@@ -132,7 +132,7 @@ impl PreviewState {
             details: header.root.upcast_ref(),
             badges: None,
             timeline: profile.as_ref().map(|p| p.upcast_ref()),
-            controls: Some(controls.upcast_ref()),
+            controls: controls.upcast_ref(),
         });
         layout.set_paintable(player.route.picture.paintable().as_ref());
         self.content.append(&root);
