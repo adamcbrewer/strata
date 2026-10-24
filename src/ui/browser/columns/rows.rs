@@ -237,7 +237,7 @@ pub(super) fn column_rows(
                 if let Some((texture, hot_x, hot_y)) = drag_preview_icon(&prepare_row, &entries) {
                     source.set_icon(Some(&texture), hot_x, hot_y);
                 }
-                file_drag_content(&entries)
+                file_drag_content(source, &entries)
             });
             let dragged_row = row.downgrade();
             let weak_state_for_begin = weak_state.clone();

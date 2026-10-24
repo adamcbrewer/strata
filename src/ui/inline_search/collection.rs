@@ -520,7 +520,7 @@ fn install_result_interactions(
         {
             source.set_icon(Some(&texture), hot_x, hot_y);
         }
-        crate::ui::browser::file_drag_content(&entries)
+        crate::ui::browser::file_drag_content(source, &entries)
     });
     widget.add_controller(drag.clone());
     widget.add_controller(click.clone());

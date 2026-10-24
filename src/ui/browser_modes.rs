@@ -4606,7 +4606,7 @@ fn install_list_drag_drop(
         {
             source.set_icon(Some(&texture), hot_x, hot_y);
         }
-        super::browser::file_drag_content(&entries)
+        super::browser::file_drag_content(source, &entries)
     });
     let dragged_row = row.downgrade();
     let weak_state_for_begin = state.clone();

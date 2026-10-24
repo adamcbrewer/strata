@@ -118,6 +118,21 @@ isolation, resource limits, or the other narrow optional runtime mounts.
   and user equations are passed as data, not evaluated as JavaScript;
   SVG resource resolution is disabled and only validated PNG output returns.
 
+## Password-protected PDFs
+
+Quick Preview shows **Preview unavailable** with **This PDF is password
+protected.** when Poppler reports that opening the document requires a password.
+An **Open** button under the message hands the file to the default PDF reader,
+where it can be unlocked; Strata does not prompt for, store, or submit PDF
+passwords or create an unlocked copy. The file chooser, which never opens files
+externally, shows the explanation alone. PDFs that open without a password, including owner-restricted
+PDFs with an empty user password, still preview normally. Other rendering failures
+keep their existing error behavior.
+
+The helper identifies protection through Poppler's typed `Encrypted` error and
+returns a structured code through the existing bounded private error output.
+Locked PDF thumbnails remain passwordless and fall back to the file icon.
+
 ## Local 3D model previews
 
 Quick Preview accepts STL, 3MF and FreeCAD (`.FCStd`) files. STL and single-part

@@ -156,6 +156,23 @@ impl Dispatcher {
         if !self.preview.owns_focus(event.focused.as_ref()) {
             return None;
         }
+        if let Some(focused) = event.focused.as_ref() {
+            if self.preview.feedback_action_focused(focused) {
+                if press.is(LEFT) {
+                    self.return_from_preview(&self.view.browser());
+                    return Some(Propagation::Stop);
+                }
+                // Arrows would otherwise walk GTK focus out of the drawer.
+                if press.is_any(&[UP, DOWN, RIGHT]) {
+                    return Some(Propagation::Stop);
+                }
+            } else if press.is_any(&[DOWN, RIGHT])
+                && self.preview.surface(focused) == PreviewSurface::Document
+                && self.preview.focus_feedback_action()
+            {
+                return Some(Propagation::Stop);
+            }
+        }
         if press.is(ENTER)
             && event
                 .focused

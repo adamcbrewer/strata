@@ -62,9 +62,21 @@ The Material-style strip appears when there is more than one tab. The plus and
 window-close controls move into it and return to the normal header when only
 one tab remains. Scroll the strip horizontally (or use the wheel) when it
 outgrows the window; selecting a tab brings it into view without a scrollbar.
-Drag a tab label to reorder tabs. Drop files on a tab to transfer into its
-current directory, or hover there during a file drag to switch tabs and choose
-a folder in its listing. Existing copy/move modifiers and conflict handling apply.
+Drag a tab label to reorder tabs; an accent-colored insertion line shows where
+it will land. Sidebar locations offer **Open in New Tab** in their context menu
+and open in a new tab on middle-click. Dragging a sidebar location or folders
+from a file view marks on the strip where new tabs will open; drop there to
+create tabs at that position. **+** also accepts these drags, and is the drop
+target when a single tab leaves the strip hidden. Escape cancels the drag.
+Folder-only drags from a file view open tabs even over an existing tab header;
+they never move or copy the folders into that tab. Opening sidebar locations
+also leaves files and sidebar pins unchanged. These tab actions are not offered
+in file choosers.
+
+Drop files (or a mixed selection of files and folders) from a listing on a tab
+to transfer into its current directory, or hover there during a file drag to
+switch tabs and choose a folder in its listing. Existing copy/move modifiers
+and conflict handling apply.
 
 ## Input precedence
 

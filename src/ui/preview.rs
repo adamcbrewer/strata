@@ -202,6 +202,7 @@ struct PreviewState {
     raw_details_scroll: gtk::ScrolledWindow,
     raw_metadata_load: RefCell<Option<super::raw_details::MetadataLoad>>,
     open: gtk::Button,
+    allow_external_open: bool,
     print: gtk::Button,
     wrap: gtk::ToggleButton,
     text_view: RefCell<Option<sourceview5::View>>,
@@ -451,6 +452,7 @@ impl PreviewDrawer {
             raw_details_scroll,
             raw_metadata_load: RefCell::new(None),
             open: open.clone(),
+            allow_external_open,
             print: print.clone(),
             wrap: wrap.clone(),
             text_view: RefCell::new(None),
@@ -1540,7 +1542,10 @@ impl PreviewState {
                     }
                     self.current_request.set(None);
                     let title = crate::i18n::tr("Preview unavailable");
-                    if !self.show_audio_error(&title, &detail, None)
+                    if message == crate::sandbox::PDF_PASSWORD_PROTECTED && self.allow_external_open
+                    {
+                        self.show_message_with_external_open(&title, &detail);
+                    } else if !self.show_audio_error(&title, &detail, None)
                         && !self.show_video_error(&title, &detail, None)
                     {
                         self.show_message(&title, &detail);
@@ -3251,13 +3256,25 @@ impl PreviewState {
         self.show_message_with_icon(title, detail, None, None);
     }
 
+    fn show_message_with_external_open(&self, title: &str, detail: &str) {
+        let feedback = self.show_message_with_icon(title, detail, None, None);
+        let open = gtk::Button::with_label(&crate::i18n::tr("Open"));
+        open.add_css_class("suggested-action");
+        open.add_css_class("preview-feedback-action");
+        open.set_halign(gtk::Align::Center);
+        let header_open = self.open.clone();
+        open.connect_clicked(move |_| header_open.emit_clicked());
+        feedback.append(&open);
+        self.hand_keys_to(&open);
+    }
+
     fn show_message_with_icon(
         &self,
         title: &str,
         detail: &str,
         icon: Option<&str>,
         command: Option<&str>,
-    ) {
+    ) -> gtk::Box {
         self.clear_content();
         let box_ = gtk::Box::new(gtk::Orientation::Vertical, 7);
         box_.add_css_class("preview-feedback");
@@ -3282,6 +3299,7 @@ impl PreviewState {
             box_.append(&super::controls::copyable_command(command));
         }
         self.content.append(&box_);
+        box_
     }
 }
 
@@ -4291,7 +4309,7 @@ fn install_preview_drag(widget: &impl IsA<gtk::Widget>, state: &Rc<PreviewState>
         {
             source.set_icon(Some(&texture), hot_x, hot_y);
         }
-        super::browser::file_drag_content(&entries)
+        super::browser::file_drag_content(source, &entries)
     });
     let weak = Rc::downgrade(state);
     drag.connect_drag_begin(move |_, _| {

@@ -201,6 +201,17 @@ impl PreviewDrawer {
         self.state.scroll_document(motion)
     }
 
+    /// Moves the keys from the placeholder content box to a message's action button.
+    pub(in crate::ui) fn focus_feedback_action(&self) -> bool {
+        self.state.focus_feedback_action()
+    }
+
+    pub(in crate::ui) fn feedback_action_focused(&self, focused: &gtk::Widget) -> bool {
+        self.state
+            .feedback_action()
+            .is_some_and(|action| *focused == action)
+    }
+
     /// Plain media keys for a keyboard-owned media preview, plus `<` / `>` from
     /// the 10xer listing while an audio preview is open.
     pub(in crate::ui) fn media_key(&self, command: MediaCommand) -> bool {
@@ -308,6 +319,36 @@ impl PreviewState {
         }
     }
 
+    /// Keyboard-driven focus the window's own key handling never reports to GTK,
+    /// so the focus ring is requested explicitly.
+    fn focus_feedback_action(&self) -> bool {
+        let Some(action) = self.feedback_action() else {
+            return false;
+        };
+        if !action.grab_focus() {
+            return false;
+        }
+        if let Some(window) = action.root().and_downcast::<gtk::Window>() {
+            window.set_focus_visible(true);
+        }
+        true
+    }
+
+    fn feedback_action(&self) -> Option<gtk::Button> {
+        let mut feedback = self.content.first_child();
+        while let Some(widget) = feedback {
+            let mut child = widget.first_child();
+            while let Some(widget) = child {
+                if widget.has_css_class("preview-feedback-action") {
+                    return widget.downcast().ok();
+                }
+                child = widget.next_sibling();
+            }
+            feedback = widget.next_sibling();
+        }
+        None
+    }
+
     /// The document's own widget, so its select-all and copy handlers receive
     /// **Ctrl+A** / **Ctrl+C**.
     fn document_key_target(&self) -> Option<gtk::Widget> {
@@ -344,6 +385,9 @@ impl PreviewState {
             entry.clone().upcast()
         } else if let Some(document) = self.document_key_target() {
             document
+        } else if self.focus_feedback_action() {
+            self.set_keyboard_owner(true);
+            return true;
         } else {
             self.content.set_focusable(true);
             self.content.clone().upcast()
