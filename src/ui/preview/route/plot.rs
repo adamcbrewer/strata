@@ -127,7 +127,10 @@ impl Plot {
             )
         };
         color(colors.accent_bright);
-        context.arc(x, y, 3.5, 0.0, std::f64::consts::TAU);
-        let _ = context.fill();
+        context.arc(x, y, 4.5, 0.0, std::f64::consts::TAU);
+        let _ = context.fill_preserve();
+        color(colors.background);
+        context.set_line_width(2.0);
+        let _ = context.stroke();
     }
 }
