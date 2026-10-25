@@ -1703,6 +1703,9 @@ fn thumbnail_kind(path: &Path) -> Option<ThumbnailKind> {
         "fcstd" => Some(ThumbnailKind::EmbeddedModel(
             crate::services::ModelFormat::FreeCad,
         )),
+        "gcode" | "gco" | "bgcode" => Some(ThumbnailKind::EmbeddedModel(
+            crate::services::ModelFormat::Gcode,
+        )),
         "appimage" => Some(ThumbnailKind::AppImage),
         "mp4" | "mkv" | "webm" | "mov" | "avi" | "m4v" | "mpeg" | "mpg" | "ogv" => {
             Some(ThumbnailKind::Video)

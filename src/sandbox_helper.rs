@@ -442,11 +442,11 @@ pub(crate) fn browser_render(
         Operation::Raw => response.png = render_camera_raw(input, 256).unwrap_or_default(),
         Operation::Pdf => response.png = render_pdf_thumbnail(input, 256).unwrap_or_default(),
         Operation::Video => response.png = render_media(input, 256).unwrap_or_default(),
-        Operation::ThreeMfThumbnail | Operation::FreeCadThumbnail => {
-            let format = if operation == Operation::ThreeMfThumbnail {
-                crate::services::ModelFormat::ThreeMf
-            } else {
-                crate::services::ModelFormat::FreeCad
+        Operation::ThreeMfThumbnail | Operation::FreeCadThumbnail | Operation::GcodeThumbnail => {
+            let format = match operation {
+                Operation::ThreeMfThumbnail => crate::services::ModelFormat::ThreeMf,
+                Operation::GcodeThumbnail => crate::services::ModelFormat::Gcode,
+                _ => crate::services::ModelFormat::FreeCad,
             };
             response.png = model::thumbnail(input, format, 256, 256, &|_| {}).unwrap_or_default();
         }

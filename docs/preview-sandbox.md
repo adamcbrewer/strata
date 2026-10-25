@@ -135,9 +135,10 @@ Locked PDF thumbnails remain passwordless and fall back to the file icon.
 
 ## Local 3D model previews
 
-Quick Preview accepts STL, 3MF and FreeCAD (`.FCStd`) files. STL and single-part
+Quick Preview accepts STL, 3MF, FreeCAD (`.FCStd`), and G-code (`.gcode`, `.gco`,
+and binary `.bgcode`) files. STL and single-part
 3MF geometry use a software render with four diagonal camera views looking down
-at the model; FreeCAD uses its saved image. Rendered
+at the model; FreeCAD and G-code use an embedded image. Rendered
 meshes show media-style previous/next controls around a circular camera-position
 indicator, with stable centring and scale. Its dot sweeps around the circle to the
 selected corner, respecting the reduced-motion and system animation settings.
@@ -172,10 +173,28 @@ candidates are corrupt or its geometry spans multiple model parts. Two usable
 images are ambiguous: Quick Preview tries geometry, while browser thumbnailing
 leaves the normal file icon. Multipart geometry is not rendered.
 
-3MF and FreeCAD browser thumbnails extract embedded images only, through the **existing browser
+G-code uses the slicer thumbnail in the file header. Text files store PNG, JPEG,
+or QOI images as base64 comments (`; thumbnail begin`, including the `_PNG`,
+`_JPG`, and `_QOI` forms). Binary `.bgcode` stores the same images in thumbnail
+blocks. Several sizes are normal, unlike two usable PNG images in a 3MF package; Quick
+Preview shows the largest image that decodes. There is no toolpath render.
+A text file with no usable thumbnail keeps the ordinary text preview. A binary
+file with none reports “This G-code file has no usable embedded thumbnail”.
+Remote G-code is not staged for a thumbnail and keeps the text preview.
+
+The reader does not scan the toolpath. Text is read only until the first command,
+and only through `MAX_GCODE_HEADER_BYTES` (2 MiB), plus the rest of a thumbnail
+block that has already started. That block still cannot exceed one 4 MiB image.
+Binary files seek through metadata and stop at the first G-code block. Thumbnail
+blocks are uncompressed; a compressed thumbnail block is skipped. G-code is not
+subject to the 128 MiB model input cap.
+
+3MF, FreeCAD, and G-code browser thumbnails extract embedded images only, through the **existing browser
 worker pool** and its normal cache, cancellation and slow-job admission. There is
-no geometry fallback or new pool. The decoder does not read
-model XML when selecting an embedded image. Missing or unusable images leave the
+no geometry fallback or new pool. The 3MF decoder does not read
+model XML when selecting an embedded image. G-code thumbnails are shown whenever
+**Show thumbnails** is enabled and do not use the STL model thumbnails setting.
+Missing or unusable images leave the
 file icon, with the existing failure cache preventing immediate retries.
 
 Local STL browser thumbnails are a separate opt-in under **Settings → Appearance
@@ -212,7 +231,8 @@ options or environment variables:
 
 | Constant | Limit | Applies to |
 | --- | --- | --- |
-| `MAX_MODEL_INPUT_BYTES` | 128 MiB (134,217,728 bytes) | Input file, including embedded-thumbnail requests |
+| `MAX_MODEL_INPUT_BYTES` | 128 MiB (134,217,728 bytes) | STL, 3MF, and FreeCAD input, including embedded-thumbnail requests |
+| `MAX_GCODE_HEADER_BYTES` | 2 MiB | Text G-code scanned before the first command. A thumbnail block already started may continue past it |
 | `MAX_MODEL_XML_BYTES` | 128 MiB, independently of compressed file size | Unpacked 3MF model XML |
 | `MAX_3MF_ARCHIVE_ENTRIES` | 256 | All ZIP entries in a 3MF package |
 | `MAX_FREECAD_ARCHIVE_ENTRIES` | 4096 | All ZIP entries in a FreeCAD package |
@@ -245,7 +265,7 @@ Embedded-image limits live in `src/sandbox_helper/model/embedded.rs`: at most 16
 candidates, 4 MiB per candidate, 16 MiB total candidate bytes read and 16 megapixels
 (16×1024×1024 pixels) total admitted to decoding. Oversized/invalid images are not
 usable; exhausting a total inspection budget fails the operation rather than
-assuming uninspected candidates are invalid. Only bounded PNG results return to
+assuming uninspected candidates are invalid. G-code reuses these limits. Only bounded PNG results return to
 GTK. Thumbnail output remains at most 256×256, in the image's original colors.
 
 ## Offline route previews

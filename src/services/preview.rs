@@ -347,8 +347,15 @@ pub(crate) fn supports_remote_video(name: &OsStr) -> bool {
         .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "mov" | "mp4"))
 }
 
-pub(crate) fn is_model(name: &OsStr) -> bool {
-    super::ModelFormat::for_name(name).is_some()
+/// Remote G-code keeps the text preview: its thumbnail is read from the file in place.
+pub(crate) fn model_format(entry: &FileEntry) -> Option<super::ModelFormat> {
+    super::ModelFormat::for_name(&entry.native_name).filter(|format| {
+        *format != super::ModelFormat::Gcode || entry.location.native_path().is_some()
+    })
+}
+
+pub(crate) fn is_model(entry: &FileEntry) -> bool {
+    model_format(entry).is_some()
 }
 
 pub(crate) fn has_plain_text_extension(name: &OsStr) -> bool {

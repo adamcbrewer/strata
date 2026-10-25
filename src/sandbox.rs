@@ -343,7 +343,13 @@ impl ParseOperation {
             | Self::PreviewRaw
             | Self::RawMetadata
             | Self::PreviewPdf(_) => Some(MAX_RASTER_INPUT_BYTES),
-            Self::PreviewModel(_) | Self::ThumbnailModel(_) => Some(MAX_MODEL_INPUT_BYTES),
+            Self::PreviewModel(render) if render.format != ModelFormat::Gcode => {
+                Some(MAX_MODEL_INPUT_BYTES)
+            }
+            Self::ThumbnailModel(format) if *format != ModelFormat::Gcode => {
+                Some(MAX_MODEL_INPUT_BYTES)
+            }
+            Self::PreviewModel(_) | Self::ThumbnailModel(_) => None,
             Self::ThumbnailCover(_) | Self::PreviewCover(_) => {
                 Some(crate::sandbox_helper::archive_cover::MAX_INPUT_BYTES)
             }

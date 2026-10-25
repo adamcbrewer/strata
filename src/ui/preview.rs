@@ -97,7 +97,7 @@ pub(crate) fn entry_supports_quick_preview(entry: &FileEntry) -> bool {
     if !matches!(entry.kind, EntryKind::File | EntryKind::FileSymbolicLink) {
         return false;
     }
-    if crate::services::is_model(&entry.native_name)
+    if crate::services::is_model(entry)
         || crate::services::route_preview::RouteFormat::for_name(&entry.native_name).is_some()
     {
         return entry.location.native_path().is_some();
@@ -576,7 +576,7 @@ impl PreviewDrawer {
                 };
                 let entry = state.current.borrow().clone();
                 if let Some(entry) = entry
-                    && (crate::services::is_model(&entry.native_name)
+                    && (crate::services::is_model(&entry)
                         || crate::services::route_preview::RouteFormat::for_name(
                             &entry.native_name,
                         )
@@ -1735,7 +1735,7 @@ impl PreviewState {
             PreviewContent::Route { preview } => self.render_route(preview),
             PreviewContent::Model { png, mesh } => self.render_model(png, mesh),
             PreviewContent::Rasterized { png } => {
-                let model = crate::services::is_model(&preview.entry.native_name);
+                let model = crate::services::is_model(&preview.entry);
                 let cover =
                     crate::sandbox::CoverFormat::for_name(&preview.entry.native_name).is_some();
                 self.print.set_visible(!model && !cover);
